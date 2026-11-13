@@ -383,7 +383,7 @@ test('platform prompt is general while each Soul retains its own identity and sp
   assert.match(COMMON_PROMPT, /当前资料不足时，先按话题主动查记忆/);
   for (const soul of loadSouls().values()) {
     const rendered = renderSoul(soul);
-    assert(rendered.includes(soul.speakingStyle));
+    assert(rendered.includes(soul.schemaVersion === 2 ? soul.definition : soul.speakingStyle));
     assert(rendered.includes(soul.identity.name));
     assert(!rendered.includes('孩子也叫你'));
   }

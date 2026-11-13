@@ -137,7 +137,9 @@ test('version changes clear the local lab database and same-version restarts pre
   await t.test('a changed SOUL prompt clears even old request, memory, and profile rows', async st => {
     const edited = new Map(souls);
     const original = edited.get(scope.agentId);
-    edited.set(scope.agentId, { ...original, speakingStyle: `${original.speakingStyle}新版。` });
+    edited.set(scope.agentId, original.schemaVersion === 2
+      ? { ...original, definition: `${original.definition}新版。` }
+      : { ...original, speakingStyle: `${original.speakingStyle}新版。` });
     const f = await fixture(st, provider, { dbPath, souls: edited, clock });
     const state = await f.json('/api/state');
     assert.notEqual(state.dataVersion, firstVersion);
@@ -246,7 +248,7 @@ test('LAN access serves the complete chat flow while rejecting other hosts and o
   assert.match(script.headers.get('content-type'), /javascript/);
   const prompt = await request('/api/agents/' + state.agents[0].id + '/prompt');
   assert.equal(prompt.status, 200);
-  assert.equal((await prompt.json()).version, 'chat-v3');
+  assert.equal((await prompt.json()).version, f.lab.runtime.souls.get(state.agents[0].id).version);
   assert.equal((await f.request('/api/state')).status, 200, 'loopback still works');
 
   const scope = { childId: state.children[0].id, agentId: state.agents[0].id };
@@ -321,14 +323,14 @@ test('prompt details expose the active system text without creating a child or i
     assert.equal(detail.memoryReview, '', 'the retired review prompt is not advertised as active');
     assert.equal(detail.memoryRepair, MEMORY_REPAIR_PROMPT);
     assert.equal(detail.system, detail.common + '\n\n' + detail.role);
-    assert.equal(detail.role.startsWith('【身份】'), true);
+    assert.equal(detail.role.startsWith(soul.schemaVersion === 2 ? '【名称】' : '【身份】'), true);
     assert.equal((await f.request(path, undefined, { 'sec-fetch-site': 'cross-site' })).status, 403);
     assert.equal((await f.request(path, undefined, { Origin: 'https://other.example' })).status, 403);
     assert.equal((await f.request(path, {})).status, 404);
   }
   const alias = await f.json('/api/agents/croco-lab/prompt');
   assert.equal(alias.agentId, state.agents[0].id);
-  assert.equal(alias.version, 'chat-v3');
+  assert.equal(alias.version, f.lab.runtime.souls.get(alias.agentId).version);
   await f.json('/api/agents/missing/prompt', undefined, 404);
   await f.json('/api/agents/%ZZ/prompt', undefined, 404);
   assert.deepEqual((await f.json('/api/state')).children, state.children);
@@ -338,7 +340,10 @@ test('prompt details expose the active system text without creating a child or i
   await f.chat(scope, null, '在吗');
   assert.equal(calls[0][0].role, 'system');
   assert.equal(calls[0][0].content, alias.system, 'details are the same bytes sent to the model');
-  const changed = { ...f.lab.runtime.souls.get(alias.agentId), speakingStyle: 'changed only in config memory' };
+  const activeSoul = f.lab.runtime.souls.get(alias.agentId);
+  const changed = activeSoul.schemaVersion === 2
+    ? { ...activeSoul, definition: 'changed only in config memory' }
+    : { ...activeSoul, speakingStyle: 'changed only in config memory' };
   f.lab.runtime.souls.set(alias.agentId, changed);
   assert.equal((await f.json('/api/agents/' + alias.agentId + '/prompt')).system, alias.system,
     'details use the active runtime system rather than rendering the config again');
@@ -504,8 +509,8 @@ test('archive validation rejects spoofed or invalid source and date; SOUL option
   assert.throws(invalid({ anchorMessageId: 'good', sourceMessageIds: ['good'], summary: '旧事', detail: { occurredAt: '2026-02-30' } }), /日期/);
   assert.equal(validateMemoryOutput(JSON.stringify(memoryPlan([])), source, 'Asia/Shanghai').creates.length, 0);
   assert.throws(() => validateMemoryOutput('{"items":[]}', source, 'Asia/Shanghai'), /V2/);
-  const benny = [...loadSouls().values()][0];
-  const text = renderSoul({ ...benny, background: '学院里的布爸。', dailyLife: '固定日常。' });
+  const legacySoul = loadSouls().get('pinecone-lab');
+  const text = renderSoul({ ...legacySoul, background: '学院里的伙伴。', dailyLife: '固定日常。' });
   assert.ok(text.indexOf('【世界观】') < text.indexOf('【背景】'));
   assert.ok(text.indexOf('【背景】') < text.indexOf('【日常】'));
 });

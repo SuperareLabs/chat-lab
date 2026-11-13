@@ -2,9 +2,10 @@
 
 一个用来验证角色聊天、工具调用和长期记忆的本地实验台。面向任意 SOUL 和任意年龄的用户，使用 Node.js 原生 HTTP、SQLite 与浏览器页面，无第三方 Node 包依赖。
 
-这是首个 Git 基线，分支为 `version1.0.0`；内部应用版本仍是 **1.3.12**，记忆框架版本为 **6**。分支名称不表示将应用版本降级。本基线保存当前实现及已知问题，不宣称架构已经完成或适合直接用于生产。
+当前为 **`version1.1.0` 开发分支**，内部应用版本 **1.3.13**，记忆框架版本仍为 **6**；首个公开基线保留在 `version1.0.0`。本轮仅试用鳄鱼爸爸的“名称＋definition原文”角色层，目标中的创建／编辑角色UI尚未开发，不表示1.1.0已完整交付，也不表示适合直接用于生产。
 
 - [架构与执行流程](docs/architecture.md)
+- [鳄鱼爸爸角色设定原文（试用稿）](docs/benny-role-setting.md)
 - [已知限制](docs/known-limitations.md)
 - [素材来源与说明](docs/ASSETS.md)
 
@@ -13,7 +14,7 @@
 需要 Git、Node.js 24 或更新版本，以及可以调用所配置模型的火山方舟 API Key。
 
 ```sh
-git clone --branch version1.0.0 https://github.com/SuperareLabs/chat-lab.git
+git clone --branch version1.1.0 https://github.com/SuperareLabs/chat-lab.git
 cd chat-lab
 export ARK_API_KEY="替换为你的方舟_API_Key"
 npm start
@@ -71,6 +72,12 @@ CHAT_HOST=127.0.0.1 PORT=4334 npm start
 
 模型选择不等于调用额度或可用性保证。用量取自服务端实际回执，费用按代码中的价格快照预估，实际扣费以模型服务账单为准。
 
+## 当前角色试用范围
+
+鳄鱼爸爸先采用 `schemaVersion: 2`：模型角色层只有 `name` 和一段完整的 `definition`，平台继续负责 `COMMON_PROMPT`。完整原文见[角色设定试用稿](docs/benny-role-setting.md)，以对应配置中的实际文本为准。`card` 保留旧角色卡信息，仅用于展示，不反向注入模型。
+
+林小满和松果继续使用原有schema 1，提示词保持原样；本轮不把所有角色一起迁移。角色创建／编辑UI尚未开发。已确定后续编辑应保持原 `soulId` 和历史记忆；本次鳄鱼爸爸试用沿用原ID，不新建角色、不重置会话或记忆。
+
 ## 当前机制
 
 - 共用聊天规则与 SOUL 配置分开；角色身份、性格、语气和擅长方向由 `config/*.soul.v1.json` 定义。
@@ -88,7 +95,7 @@ CHAT_HOST=127.0.0.1 PORT=4334 npm start
 
 升级前应备份自己的数据库。默认 `CHAT_ALLOW_DATA_RESET=0`，只接纳代码明确列出的兼容指纹；遇到不兼容版本会保留旧数据并拒绝启动。不要用开启重置来绕过升级检查；先确认数据迁移方案，或使用新的独立测试数据库。本基线不因修改提示词而自动清空已有资料。
 
-`version1.0.0` 是这次公开 Git 基线，后续代码变化通过提交和分支管理。它与内部 `package.json` 的 `1.3.12`、记忆框架版本和数据指纹分别管理。
+`version1.0.0` 是首个公开Git基线，`version1.1.0` 是当前开发分支，目标功能尚未完整交付。分支名称、内部 `package.json` 的 `1.3.13`、角色schema、记忆框架版本和数据指纹分别管理。
 
 ## 测试与许可状态
 

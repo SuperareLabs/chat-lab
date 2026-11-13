@@ -117,7 +117,10 @@ test('actual role prompt changes reset records while legacy migration checks the
   const souls = loadSouls();
   const id = souls.keys().next().value;
   const changed = new Map(souls);
-  changed.set(id, { ...souls.get(id), speakingStyle: souls.get(id).speakingStyle + '这是提示词的实际变更。' });
+  const original = souls.get(id);
+  changed.set(id, original.schemaVersion === 2
+    ? { ...original, definition: original.definition + '这是提示词的实际变更。' }
+    : { ...original, speakingStyle: original.speakingStyle + '这是提示词的实际变更。' });
 
   for (const legacy of [false, true]) {
     const dbPath = join(directory, legacy ? 'legacy.sqlite' : 'current.sqlite');
@@ -213,6 +216,7 @@ const deployedRepairVersions = [
   ['1.3.9', 6, '96d167a946ef3852a0900a3f06df93a5bc19901e94f257854f84c05f2fb9534b'],
   ['1.3.10', 6, '119dd775b8807574ea6bd91ba9dbfe39a153af811876d2a621607496bc9a1291'],
   ['1.3.11', 6, '2c2802f8944d69b0e5c5d027f40e858e44d72524fe1c189818ef55ae3b21e9ec'],
+  ['1.3.12', 6, '760e21c0068a87b4a3cc150a0beef67271e6db80215b918be29862643daabb61'],
 ];
 for (const [version, framework, fingerprint] of deployedRepairVersions) {
 test(`framework 6 adopts the authorized deployed ${version} fingerprint without rewriting business data`, async t => {
@@ -226,7 +230,7 @@ test(`framework 6 adopts the authorized deployed ${version} fingerprint without 
   seedPreservedOverview(lab);
   const preserved = completeSnapshot(lab.store);
   await closeLab(lab);
-  lab = await openLab(dbPath, { appVersion: '1.3.12', memoryFrameworkVersion: 6, allowDataReset: false,
+  lab = await openLab(dbPath, { appVersion: '1.3.13', memoryFrameworkVersion: 6, allowDataReset: false,
     contextBriefEnabled: false });
   t.after(() => closeLab(lab));
   assert.notEqual(lab.runtime.dataVersion, fingerprint);
