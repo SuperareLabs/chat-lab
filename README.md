@@ -6,6 +6,7 @@
 
 - [架构与执行流程](docs/architecture.md)
 - [鳄鱼爸爸角色设定原文（试用稿）](docs/benny-role-setting.md)
+- [角色提示词的编写与搜集方向](docs/character-prompt-direction.md)
 - [联网参考配图](docs/search-reference-images.md)
 - [已知限制](docs/known-limitations.md)
 - [素材来源与说明](docs/ASSETS.md)
