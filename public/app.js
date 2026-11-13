@@ -164,7 +164,67 @@ function assistantBubbles(text) {
   return [text];
 }
 
-function chatMessage(role, text, animate = false, replyParts) {
+function publicReferenceUrl(value, image = false) {
+  if (typeof value !== 'string' || value.length > 4096 || /[\u0000-\u0020\u007f]/.test(value)) return null;
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/\.+$/, '');
+    if (!(image ? url.protocol === 'https:' : ['https:', 'http:'].includes(url.protocol)) || url.username || url.password ||
+        !host.includes('.') || host.includes(':') || /^[\d.]+$/.test(host) ||
+        ['localhost', 'local', 'internal', 'lan', 'home', 'home.arpa'].some(suffix => host === suffix || host.endsWith('.' + suffix))) return null;
+    return url.href;
+  } catch { return null; }
+}
+
+function referenceImageAttachment(value) {
+  if (!value || value.type !== 'reference_image' || typeof value.id !== 'string' || !value.id.trim() ||
+      typeof value.title !== 'string') return null;
+  const imageUrl = publicReferenceUrl(value.imageUrl, true);
+  const sourceUrl = publicReferenceUrl(value.sourceUrl);
+  if (!imageUrl || !sourceUrl) return null;
+  const dimensions = {};
+  for (const field of ['width', 'height']) {
+    if (Number.isInteger(value[field]) && value[field] > 0 && value[field] <= 20_000) dimensions[field] = value[field];
+  }
+  return { id: value.id.trim(), type: 'reference_image', imageUrl, sourceUrl, title: value.title.trim(), ...dimensions };
+}
+
+function appendMessageAttachments(stack, attachments) {
+  if (!Array.isArray(attachments) || stack.querySelector('.message-reference-image')) return;
+  for (const value of attachments) {
+    const attachment = referenceImageAttachment(value);
+    if (!attachment) continue;
+    const title = attachment.title || '参考配图';
+    const card = node('a', 'message-reference-image');
+    card.dataset.attachmentId = attachment.id;
+    card.href = attachment.sourceUrl;
+    card.target = '_blank';
+    card.rel = 'noopener noreferrer';
+    card.referrerPolicy = 'no-referrer';
+    card.setAttribute('aria-label', `来源网页配图：${title}，查看来源（新标签页打开）`);
+    const picture = node('img', 'reference-image-picture');
+    picture.alt = title;
+    picture.referrerPolicy = 'no-referrer';
+    picture.loading = 'lazy';
+    picture.decoding = 'async';
+    for (const field of ['width', 'height']) if (attachment[field]) picture[field] = attachment[field];
+    if (attachment.width && attachment.height) picture.style.aspectRatio = `${attachment.width} / ${attachment.height}`;
+    const caption = node('div', 'reference-image-caption');
+    const source = node('span', 'reference-image-source', '查看来源 ↗');
+    caption.append(node('span', 'reference-image-label', '来源网页配图'), node('strong', 'reference-image-title', title), source);
+    picture.addEventListener('error', () => {
+      picture.hidden = true;
+      card.classList.add('image-unavailable');
+      source.textContent = '图片暂不可用，查看来源 ↗';
+    }, { once: true });
+    picture.src = attachment.imageUrl;
+    card.append(picture, caption);
+    stack.append(card);
+    return;
+  }
+}
+
+function chatMessage(role, text, animate = false, replyParts, attachments) {
   const assistant = role === 'assistant';
   const row = node('div', `message-row ${assistant ? 'is-assistant' : 'is-user'}`);
   if (assistant && imageForAgent()) {
@@ -179,6 +239,7 @@ function chatMessage(role, text, animate = false, replyParts) {
     replyParts.every(part => typeof part === 'string' && part.trim()) ? replyParts : text === undefined ? [] : [text];
   const bubbles = assistant ? sections.flatMap(assistantBubbles) : sections;
   for (const part of bubbles) stack.append(messageBubble(part, animate));
+  if (assistant) appendMessageAttachments(stack, attachments);
   row.append(stack);
   return { row, stack };
 }
@@ -224,7 +285,7 @@ function scrollLatest(force = false) {
 
 function renderChat(messages = [], loading = false) {
   const empty = ui['chat-empty'];
-  const rows = messages.map(message => chatMessage(message.role, message.text ?? message.content ?? '', false, message.parts).row);
+  const rows = messages.map(message => chatMessage(message.role, message.text ?? message.content ?? '', false, message.parts, message.attachments).row);
   if (empty) {
     empty.hidden = Boolean(rows.length);
     put('chat-empty-title', loading ? '正在加载会话…' : (state.childId ? `和${agent()?.name || 'Agent'}聊聊` : '选择用户，开始试聊'));
@@ -1075,6 +1136,7 @@ async function requestReply() {
   let presentationError;
   const receivedParts = new Set();
   const receivedPartTexts = [];
+  const receivedAttachments = [];
   try {
     const requestId = newRequestId();
     const response = await fetch('/api/chat', {
@@ -1108,6 +1170,10 @@ async function requestReply() {
         presentation = presentation.then(() => appendReplyPart(reply.stack, event.text, () => !streamEnded))
           .catch(error => { presentationError ??= error; });
       }
+      if (event.type === 'reply_attachment' && !receivedAttachments.length) {
+        const attachment = referenceImageAttachment(event.attachment);
+        if (attachment) receivedAttachments.push(attachment);
+      }
       if (event.type === 'tool_status') {
         if (event.status === 'running') put('chat-status', event.label || `${agent()?.name || 'Agent'}正在处理…`);
         else if (event.status === 'complete') put('chat-status', `${agent()?.name || 'Agent'}正在回复…`);
@@ -1121,9 +1187,15 @@ async function requestReply() {
     removeTyping(reply.stack);
     put('chat-status', '');
     if (!receivedParts.size) await showReply(reply.stack, text);
+    appendMessageAttachments(reply.stack, receivedAttachments);
+    scrollLatest();
     await Promise.all([refreshSessions(id), refreshMemory()]);
     const data = await api(scoped(`/api/sessions/${encodeURIComponent(id)}`));
     state.conversation = data;
+    const persistedReply = data.messages?.findLast(message => message.role === 'assistant');
+    if (persistedReply?.text === (receivedPartTexts.length ? receivedPartTexts.join('\n\n') : text)) {
+      appendMessageAttachments(reply.stack, persistedReply.attachments);
+    }
     state.liveToolCalls = null;
     renderUsage(data.usage);
     renderContext(data.context);
@@ -1131,6 +1203,7 @@ async function requestReply() {
     streamEnded = true;
     await presentation;
     removeTyping(reply.stack);
+    if (receivedParts.size) appendMessageAttachments(reply.stack, receivedAttachments);
     show('app-error', error.message);
     if (!receivedParts.size) reply.row.remove();
     if (!began) {

@@ -247,6 +247,35 @@ button, select, input, textarea, summary { -webkit-tap-highlight-color: transpar
 .message-bubble > :first-child { margin-top: 0; }
 .message-bubble > :last-child { margin-bottom: 0; }
 .message-bubble.is-arriving { animation: message-arrive 180ms ease-out both; }
+.message-reference-image {
+  display: block;
+  width: 330px;
+  max-width: 100%;
+  min-width: 0;
+  margin-top: 5px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--text);
+  text-decoration: none;
+}
+.message-reference-image:hover { border-color: #a8bfb1; }
+.message-reference-image:focus-visible { outline-offset: 2px; }
+.reference-image-picture {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 280px;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  background: var(--assistant);
+}
+.reference-image-caption { display: grid; gap: 3px; min-width: 0; padding: 10px 12px; overflow-wrap: anywhere; }
+.reference-image-label { color: var(--muted); font-size: 10px; }
+.reference-image-title { font-size: 12px; line-height: 1.55; font-weight: 600; }
+.reference-image-source { color: var(--accent); font-size: 11px; }
+.message-reference-image.image-unavailable .reference-image-caption { padding-block: 12px; }
 .message-typing { display: flex; align-items: center; justify-content: center; gap: 4px; min-height: 42px; min-width: 56px; }
 .message-typing span { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); animation: message-dot 1100ms ease-in-out infinite; }
 .message-typing span:nth-child(2) { animation-delay: 120ms; }
