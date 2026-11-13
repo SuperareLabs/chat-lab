@@ -1,3 +1,4 @@
+import { loadSouls } from '../lib/prompts.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -19,7 +20,7 @@ const response = (text, input = 1000, output = 10) => ({ content: text, toolCall
 const tool = (name, args) => ({ id: 'tool-one', type: 'function', function: { name, arguments: JSON.stringify(args) } });
 
 async function fixture(t, provider, options = {}) {
-  const lab = createLabServer({
+  const lab = createLabServer({ souls: loadSouls(),
     provider, dbPath: ':memory:', clock: () => new Date(instant),
     model: { name: CHAT, configured: true, searchConfigured: !!options.search, searchModel: SEARCH, mode: 'test' },
     ...options,
@@ -197,7 +198,7 @@ test('additive accounting migration retains existing messages and flags previous
   t.after(() => rm(directory, { recursive: true, force: true }));
   const dbPath = join(directory, 'chat.sqlite');
   const provider = { async chat() { return response('在。'); } };
-  const old = createLabServer({ provider, dbPath, clock: () => new Date(instant) });
+  const old = createLabServer({ souls: loadSouls(), provider, dbPath, clock: () => new Date(instant) });
   await old.listen(0);
   const child = old.store.children()[0];
   const agentId = old.runtime.state().agents[0].id;
@@ -210,7 +211,7 @@ test('additive accounting migration retains existing messages and flags previous
   const legacy = new DatabaseSync(dbPath);
   legacy.exec('DROP TABLE usage_records');
   legacy.close();
-  const next = createLabServer({ provider, dbPath, clock: () => new Date(instant) });
+  const next = createLabServer({ souls: loadSouls(), provider, dbPath, clock: () => new Date(instant) });
   await next.listen(0);
   t.after(() => next.close());
   assert.equal(next.runtime.dataVersion, version);

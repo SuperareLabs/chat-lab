@@ -142,6 +142,17 @@ export function createLabServer(options = {}) {
     if (method === 'GET' && pathname === '/api/state') {
       return sendJson(response, 200, runtime.state());
     }
+    if (method === 'POST' && pathname === '/api/agents') {
+      return sendJson(response, 201, { agent: runtime.createAgent(await jsonBody(request)) });
+    }
+    const agentRoute = /^\/api\/agents\/([^/]+)$/.exec(pathname);
+    if (agentRoute && (method === 'GET' || method === 'PATCH')) {
+      let id;
+      try { id = decodeURIComponent(agentRoute[1]); }
+      catch { throw problem('找不到此角色', 404); }
+      return sendJson(response, 200, { agent: method === 'GET' ? runtime.agent(id)
+        : runtime.updateAgent(id, await jsonBody(request)) });
+    }
     const promptRoute = /^\/api\/agents\/([^/]+)\/prompt$/.exec(pathname);
     if (method === 'GET' && promptRoute) {
       let promptAgentId;

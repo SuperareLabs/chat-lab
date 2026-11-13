@@ -62,6 +62,15 @@ body:has(.agent-gallery[open]) { overflow:hidden; }
 .gallery-field-title { display:flex; align-items:center; gap:8px; margin:0 0 6px; color:var(--gallery-accent); font-size:12px; font-weight:650; }
 .gallery-field-title::before { width:6px; height:6px; margin:0 1px; border:1px solid currentColor; transform:rotate(45deg); content:""; }
 .gallery-field-copy { margin:0; color:var(--gallery-ink); font-size:13px; line-height:1.7; overflow-wrap:anywhere; }
+.gallery-create-button { margin-left:auto; min-height:36px; }
+.gallery-card[data-layout="definition"] { grid-template-areas:"portrait definition"; grid-template-columns:minmax(220px,.85fr) minmax(0,1.5fr); gap:36px; }
+.gallery-definition { grid-area:definition; min-width:0; align-self:center; padding:22px; border:1px solid var(--gallery-line); border-radius:16px; background:var(--paper); }
+.gallery-definition-heading { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:16px; }
+.gallery-definition-title { margin:0; color:var(--gallery-accent); font-size:14px; font-weight:650; }
+.gallery-edit-button { min-height:36px; }
+.gallery-definition-copy { margin:0; color:var(--gallery-ink); font-size:14px; line-height:1.9; white-space:pre-wrap; overflow-wrap:anywhere; }
+.gallery-definition-copy.is-collapsed { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:11; overflow:hidden; }
+.gallery-definition-expand { display:block; margin-top:14px; min-height:36px; padding:5px 0; border:0; background:transparent; color:var(--gallery-accent); font-size:12px; text-align:left; }
 .gallery-tags { display:flex; flex-wrap:wrap; gap:5px; margin:0; padding:0; list-style:none; }
 .gallery-tag { padding:3px 6px; color:var(--gallery-accent); border:1px solid var(--gallery-line); border-radius:5px; background:var(--gallery-soft); font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
 .gallery-footer { border-top:1px solid var(--line); }
@@ -111,6 +120,9 @@ body:has(.agent-gallery[open]) { overflow:hidden; }
   .gallery-view-bar { padding:8px 16px; }
   .gallery-view-note { display:none; }
   .gallery-card { grid-template-areas:"portrait portrait" "left right"; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; min-height:0; gap:12px; padding:8px 16px 20px; }
+  .gallery-card[data-layout="definition"] { grid-template-areas:"portrait" "definition"; grid-template-columns:minmax(0,1fr); gap:16px; }
+  .gallery-definition { width:100%; padding:16px; }
+  .gallery-definition-copy { font-size:13px; }
   .gallery-connections { display:none; }
   .gallery-orbit { width:min(67vw,274px); }
   .gallery-portrait { margin-bottom:8px; }

@@ -22,6 +22,9 @@
             <span id="agent-select-label">正在加载…</span>
             <svg class="agent-select-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
+          <button id="new-agent" class="toolbar-action" type="button" aria-haspopup="dialog" aria-controls="agent-editor">
+            <img src="/assets/icons/plus-lg.svg" alt=""><span>创建角色</span>
+          </button>
         </div>
         <div class="toolbar-right">
           <div class="toolbar-group">
@@ -60,8 +63,8 @@
           <div class="chat-identity">
             <img id="agent-avatar" class="agent-avatar" src="/assets/benny.png" alt="">
             <div class="agent-copy">
-              <h2 id="agent-name">鳄鱼爸爸</h2>
-              <p id="agent-description">好奇学院院长</p>
+              <h2 id="agent-name">选择 Agent</h2>
+              <p id="agent-description"></p>
             </div>
           </div>
           <div class="panel-shortcuts" aria-label="实验详情">
@@ -83,7 +86,7 @@
           <div id="chat-status" class="chat-status" role="status" aria-live="polite"></div>
           <form id="chat-form" class="chat-form">
             <label class="visually-hidden" for="chat-input">聊天消息</label>
-            <textarea id="chat-input" name="message" rows="1" placeholder="给鳄鱼爸爸发消息…" maxlength="4000" disabled></textarea>
+            <textarea id="chat-input" name="message" rows="1" placeholder="选择或创建角色后开始聊天…" maxlength="4000" disabled></textarea>
             <button id="send-button" class="send-button" type="submit" aria-label="发送消息" title="发送消息" disabled><img src="/assets/icons/arrow-up.svg" alt=""></button>
           </form>
           <footer class="composer-meta">
@@ -119,11 +122,11 @@
             </svg>
           </span>
           <div>
-            <p class="gallery-kicker">好奇学院</p>
+            <p class="gallery-kicker">全Agent轻量聊天</p>
             <h2 id="agent-gallery-title">角色图鉴</h2>
           </div>
         </div>
-        <p class="gallery-header-note">从角色设定，了解彼此</p>
+        <button id="agent-gallery-create" class="gallery-copy-button gallery-create-button" type="button">创建角色</button>
         <button id="agent-gallery-close" class="gallery-close" type="button" aria-label="关闭角色图鉴" title="关闭角色图鉴">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         </button>
@@ -133,7 +136,7 @@
           <button id="agent-view-overview" class="gallery-view-tab" type="button" role="tab" aria-controls="agent-overview-view" aria-selected="true">角色概览</button>
           <button id="agent-view-prompt" class="gallery-view-tab" type="button" role="tab" aria-controls="agent-prompt-view" aria-selected="false" tabindex="-1">提示词详情</button>
         </div>
-        <span class="gallery-view-note">性格 · 表达 · 能力</span>
+        <span class="gallery-view-note">名称 · 角色设定原文</span>
       </nav>
       <section id="agent-overview-view" class="gallery-overview-view" role="tabpanel" aria-labelledby="agent-view-overview">
         <article id="agent-gallery-card" class="gallery-card"></article>
@@ -174,6 +177,22 @@
         </div>
       </footer>
     </div>
+  </dialog>
+
+  <dialog id="agent-editor" class="agent-editor" aria-labelledby="agent-editor-title">
+    <form id="agent-editor-form" class="agent-editor-form">
+      <h2 id="agent-editor-title">创建角色</h2>
+      <label for="agent-editor-name">名称</label>
+      <input id="agent-editor-name" name="name" required autocomplete="off" placeholder="给角色起个名字">
+      <label for="agent-editor-definition">角色设定</label>
+      <textarea id="agent-editor-definition" name="definition" required rows="14" placeholder="写下这个角色的完整设定，可以分段。"></textarea>
+      <p id="agent-editor-error" class="field-error" role="alert" hidden></p>
+      <button id="agent-editor-reload" class="secondary-button agent-editor-reload" type="button" hidden>重新载入已保存版本</button>
+      <div class="dialog-actions">
+        <button id="agent-editor-cancel" class="secondary-button" type="button">取消</button>
+        <button id="agent-editor-save" class="primary-button" type="submit">保存</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog id="child-dialog" class="child-dialog" aria-labelledby="child-dialog-title">

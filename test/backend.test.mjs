@@ -16,7 +16,7 @@ const turnId = (text, id) => ({ id, type: 'function', function: text });
 const modelTool = (name, args, id = 'tool-' + name) => turnId({ name, arguments: JSON.stringify(args) }, id);
 
 async function fixture(t, provider, options = {}) {
-  const lab = createLabServer({ provider, ...options });
+  const lab = createLabServer({ souls: loadSouls(), provider, ...options });
   const { port } = await lab.listen(0);
   t.after(() => lab.close());
   const url = 'http://127.0.0.1:' + port;
@@ -61,7 +61,7 @@ async function until(read, predicate) {
   assert.fail('condition not reached');
 }
 
-test('version changes clear the local lab database and same-version restarts preserve it', async t => {
+test('initial platform activation and later restarts preserve persisted role and conversation data', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'croco-lab-version-'));
   const dbPath = join(directory, 'chat.sqlite');
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -134,7 +134,7 @@ test('version changes clear the local lab database and same-version restarts pre
     assert.equal(f.lab.store.sql('SELECT user_count FROM runs').get().user_count, 1);
   });
 
-  await t.test('a changed SOUL prompt clears even old request, memory, and profile rows', async st => {
+  await t.test('changed SOUL seed text cannot reset data or overwrite an initialized database role', async st => {
     const edited = new Map(souls);
     const original = edited.get(scope.agentId);
     edited.set(scope.agentId, original.schemaVersion === 2
@@ -142,14 +142,12 @@ test('version changes clear the local lab database and same-version restarts pre
       : { ...original, speakingStyle: `${original.speakingStyle}新版。` });
     const f = await fixture(st, provider, { dbPath, souls: edited, clock });
     const state = await f.json('/api/state');
-    assert.notEqual(state.dataVersion, firstVersion);
-    assert.equal(state.children.length, 1);
-    const [child] = state.children;
-    assert.notEqual(child.id, scope.childId);
-    assert.deepEqual(child, { id: child.id, name: '马超', age: 8, interests: [] });
-    for (const table of tables) assert.equal(f.lab.store.sql(`SELECT count(*) AS n FROM ${table}`).get().n, table === 'children' ? 1 : 0, table);
-    await f.json('/api/memory/' + memoryId + query(scope), undefined, 404);
-    await f.json('/api/sessions/' + sessionId + query(scope), undefined, 404);
+    assert.equal(state.dataVersion, firstVersion);
+    assert.deepEqual(state.children, firstChildren);
+    for (const table of tables) assert(f.lab.store.sql(`SELECT count(*) AS n FROM ${table}`).get().n > 0, table);
+    await f.json('/api/memory/' + memoryId + query(scope));
+    await f.json('/api/sessions/' + sessionId + query(scope));
+    assert.equal(f.lab.runtime.promptDetail(scope.agentId).system, renderSoul(original));
   });
 });
 
@@ -183,8 +181,8 @@ test('localhost navigation works; cross-site API, scope errors and disabled tool
   assert.equal(xiaoman.card.voice, undefined, 'public defaults have no private reference audio');
   const xiaomanPrompt = await f.json('/api/agents/lin-xiaoman/prompt');
   assert.match(xiaomanPrompt.role, /林小满/);
-  assert.match(xiaomanPrompt.role, /【背景】/);
-  assert.match(xiaomanPrompt.role, /【日常】/);
+  assert.match(xiaomanPrompt.role, /【角色设定】/);
+  assert.equal(xiaomanPrompt.definition, xiaoman.definition);
   assert.doesNotMatch(xiaomanPrompt.system, /guhan-reference|实时语音尚未接入/);
   const child = await f.child();
   const scope = { childId: child.id, agentId: state.agents[0].id };
@@ -309,7 +307,7 @@ test('prompt details expose the active system text without creating a child or i
     const detail = await response.json();
     const soul = f.lab.runtime.souls.get(agent.id);
     assert.deepEqual(Object.keys(detail).sort(), [
-      'agentId', 'common', 'contextBrief', 'dataVersion', 'memory', 'memoryModel', 'memoryRepair', 'memoryReview', 'model', 'name', 'role', 'system', 'version',
+      'agentId', 'common', 'contextBrief', 'dataVersion', 'definition', 'memory', 'memoryModel', 'memoryRepair', 'memoryReview', 'model', 'name', 'revision', 'role', 'system', 'version',
     ]);
     assert.equal(detail.agentId, agent.id);
     assert.equal(detail.name, agent.name);

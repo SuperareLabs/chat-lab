@@ -86,9 +86,8 @@ test('the migrated crocodile retains its original scope ID and uses the complete
   assert.equal(renderSoul(soul), `${COMMON_PROMPT}\n\n【名称】${soul.name}\n【角色设定】${soul.definition}`);
 });
 
-test('schema 1 Lin Xiaoman and Pinecone keep their exact pre-migration system bytes', () => {
+test('Pinecone keeps its exact schema-1 bytes while Lin Xiaoman uses the complete schema-2 definition', () => {
   const expected = new Map([
-    ['lin-xiaoman', 'f97efb3fc7e49fba9e34151d28ebda3d5ad5c7783294fcf3326b6cab2ea2e30e'],
     ['pinecone-lab', '515e97d363e1d9a97c3ae4ec1107621899ae80518e895422beabf903003e071b'],
   ]);
   const souls = loadSouls();
@@ -97,4 +96,8 @@ test('schema 1 Lin Xiaoman and Pinecone keep their exact pre-migration system by
     assert.equal(soul.schemaVersion, 1);
     assert.equal(createHash('sha256').update(renderSoul(soul)).digest('hex'), hash);
   }
+  const lin = souls.get('lin-xiaoman');
+  assert.equal(lin.schemaVersion, 2);
+  assert.equal(lin.audience.minimumAge, 18);
+  assert.equal(renderSoul(lin), `${COMMON_PROMPT}\n\n【名称】${lin.name}\n【角色设定】${lin.definition}`);
 });

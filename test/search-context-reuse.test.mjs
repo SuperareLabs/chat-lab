@@ -1,3 +1,4 @@
+import { loadSouls } from '../lib/prompts.mjs';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -17,7 +18,7 @@ const result = (topic = '成都') => ({
 });
 
 async function openLab(provider, search, dbPath = ':memory:') {
-  const lab = createLabServer({ dbPath, provider, search, clock: () => new Date(at),
+  const lab = createLabServer({ souls: loadSouls(), dbPath, provider, search, clock: () => new Date(at),
     contextBriefEnabled: false, allowDataReset: false, memoryModel: { name: 'disabled', configured: false } });
   const { port } = await lab.listen(0);
   const state = lab.runtime.state();

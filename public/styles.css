@@ -440,7 +440,7 @@ button, select, input, textarea, summary { -webkit-tap-highlight-color: transpar
 .memory-change + .memory-change { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; }
 .memory-withdrawal { padding: 8px; border-radius: 6px; color: #7a5444; background: #f5ede4; }
 
-.child-dialog {
+.child-dialog, .agent-editor {
   width: min(410px, calc(100vw - 32px));
   max-height: calc(100dvh - 32px);
   padding: 25px;
@@ -451,7 +451,7 @@ button, select, input, textarea, summary { -webkit-tap-highlight-color: transpar
   box-shadow: 0 18px 65px #1324192b;
 }
 
-.child-dialog::backdrop { background: #23342b42; }
+.child-dialog::backdrop, .agent-editor::backdrop { background: #23342b42; backdrop-filter: blur(5px); }
 .child-form { display: grid; gap: 8px; }
 .child-form h2 { margin: 0 0 7px; font-size: 19px; }
 .child-form label { font-size: 13px; font-weight: 620; }
@@ -463,6 +463,15 @@ button, select, input, textarea, summary { -webkit-tap-highlight-color: transpar
 .primary-button { background: #426c59; color: white; border-color: #426c59; }
 .primary-button:not(:disabled):hover { background: #355b4a; }
 .secondary-button:not(:disabled):hover { background: var(--assistant); }
+.agent-editor { width: min(690px, calc(100vw - 32px)); overflow: auto; }
+.agent-editor-form { display: grid; gap: 10px; }
+.agent-editor-form h2 { margin: 0 0 7px; font-size: 20px; }
+.agent-editor-form label { font-size: 13px; font-weight: 620; }
+.agent-editor-form input, .agent-editor-form textarea { width: 100%; min-width: 0; padding: 11px 12px; border: 1px solid var(--border); border-radius: 10px; color: var(--text); background: var(--paper); }
+.agent-editor-form textarea { min-height: 230px; max-height: 53dvh; resize: vertical; font-size: 14px; line-height: 1.8; }
+.agent-editor-reload { justify-self: start; }
+.toolbar-agent { flex-wrap: wrap; }
+body:has(.agent-editor[open]) { overflow: hidden; }
 
 @media (max-width: 1060px) {
   .workspace { width: min(100% - 42px, 900px); margin-top: 26px; }

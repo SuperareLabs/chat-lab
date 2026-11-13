@@ -1,3 +1,4 @@
+import { loadSouls } from '../lib/prompts.mjs';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -21,7 +22,7 @@ const toolReply = (text, name = 'search_web', args = { query: '火星表面颜�
 });
 
 async function fixture(t, provider, search) {
-  const lab = createLabServer({ provider, search, dbPath: ':memory:' });
+  const lab = createLabServer({ souls: loadSouls(), provider, search, dbPath: ':memory:' });
   const { port } = await lab.listen(0);
   t.after(() => lab.close());
   const origin = 'http://127.0.0.1:' + port;

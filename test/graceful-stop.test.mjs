@@ -1,3 +1,4 @@
+import { loadSouls } from '../lib/prompts.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createLabServer } from '../server.mjs';
@@ -8,7 +9,7 @@ const nextTurn = () => new Promise(resolve => setImmediate(resolve));
 test('draining shutdown waits for an active chat without aborting its provider or losing the reply', { timeout: 5000 }, async t => {
   const gate = deferred(), entered = deferred();
   let signal, closing, chat, closed = false, completed;
-  const lab = createLabServer({ dbPath: ':memory:', contextBriefEnabled: false,
+  const lab = createLabServer({ souls: loadSouls(), dbPath: ':memory:', contextBriefEnabled: false,
     provider: { async chat(options) {
       assert.equal(options.responseFormat, undefined);
       signal = options.signal;
@@ -57,7 +58,7 @@ test('draining shutdown waits for an active chat without aborting its provider o
 test('draining shutdown waits for a claimed memory job and lets it commit before closing SQLite', { timeout: 5000 }, async t => {
   const gate = deferred(), entered = deferred();
   let signal, closing, closed = false, committed, calls = 0;
-  const lab = createLabServer({ dbPath: ':memory:', contextBriefEnabled: false,
+  const lab = createLabServer({ souls: loadSouls(), dbPath: ':memory:', contextBriefEnabled: false,
     provider: { async chat() { throw new Error('This test does not call the chat provider'); } },
     memoryModel: { name: 'gated-memory-test', configured: true, mode: 'test' },
     memoryProvider: { async chat(options) {

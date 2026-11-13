@@ -1,3 +1,4 @@
+import { loadSouls } from '../lib/prompts.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { setTimeout as pause } from 'node:timers/promises';
@@ -7,7 +8,7 @@ test('two invalid source responses are logged without writes and only an explici
   let memoryCalls = 0, release;
   const gate = new Promise(resolve => { release = resolve; });
   t.after(release);
-  const lab = createLabServer({ dbPath: ':memory:', provider: { async chat(options) {
+  const lab = createLabServer({ souls: loadSouls(), dbPath: ':memory:', provider: { async chat(options) {
     assert.equal(options.responseFormat, undefined, 'chat provider does not perform memory work');
     return { content: '好，小禾。', toolCalls: [], receipt: { finish_reason: 'stop' } };
   } }, memoryModel: { name: 'separate-memory-model', configured: true, mode: 'test' }, memoryProvider: { async chat(options) {
@@ -85,7 +86,7 @@ test('a mixed invalid extraction still failing after one repair preserves both o
   let calls = 0;
   const receipt = { model: 'doubao-seed-2-1-lite-260915', finish_reason: 'stop',
     usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, prompt_tokens_details: { cached_tokens: 0 } } };
-  const lab = createLabServer({ dbPath: ':memory:',
+  const lab = createLabServer({ souls: loadSouls(), dbPath: ':memory:',
     provider: { async chat() { return { content: '好。', toolCalls: [], receipt: { finish_reason: 'stop' } }; } },
     memoryModel: { name: receipt.model, configured: true, mode: 'test' },
     memoryProvider: { async chat(options) {

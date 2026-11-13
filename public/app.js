@@ -7,13 +7,14 @@ const ui = Object.fromEntries([
   'chat-form', 'chat-input', 'send-button', 'model-status', 'chat-status', 'composer-hint', 'session-usage',
   'context-content', 'memory-content', 'child-dialog', 'child-form', 'child-name', 'child-age',
   'child-interests', 'child-error', 'child-cancel', 'app-error', 'context-toggle', 'memory-toggle',
-  'context-panel', 'memory-panel',
+  'context-panel', 'memory-panel', 'new-agent',
 ].map(id => [id, el(id)]));
 
 const state = {
   agents: [], children: [], sessions: [], model: {}, agentId: '', childId: '', sessionId: '',
   dataVersion: '',
   scopeVersion: 0, sessionVersion: 0, sending: false, busy: false, conversation: null,
+  editorSaving: false,
   pendingMessages: [], pendingTimer: null,
   memorySignature: null, memoryOpen: new Set(), memoryDetails: new Map(), memoryData: null, memoryFilter: 'active', polling: false,
   sessionUsage: null, liveToolCalls: null,
@@ -52,13 +53,139 @@ function show(id, text) {
   ui[id].hidden = !text;
 }
 
-async function api(path, body) {
+async function api(path, body, method = 'POST') {
   const response = await fetch(path, body === undefined ? { cache: 'no-store' } : {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
   const data = await response.json().catch(() => null);
-  if (!response.ok || !data) throw new Error(data?.error || `请求失败 (${response.status})`);
+  if (!response.ok || !data) {
+    const error = new Error(data?.error || `请求失败 (${response.status})`);
+    error.status = response.status;
+    throw error;
+  }
   return data;
+}
+
+function installAgentEditor({ canOpen, onSaved, onBusyChanged = () => {} }) {
+  const fields = Object.fromEntries(['title', 'form', 'name', 'definition', 'error', 'reload', 'cancel', 'save']
+    .map(key => [key, el(`agent-editor-${key}`)]));
+  const dialog = el('agent-editor');
+  let editingId = '';
+  let revision;
+  let loading = false;
+  let saving = false;
+  let conflicted = false;
+  let pendingSaved = null;
+  let loadSerial = 0;
+
+  function errorMessage(message = '') {
+    fields.error.textContent = message;
+    fields.error.hidden = !message;
+  }
+
+  function renderControls() {
+    fields.name.disabled = fields.definition.disabled = loading || saving || Boolean(pendingSaved);
+    fields.save.disabled = loading || saving || conflicted || Boolean(editingId && revision == null);
+    fields.cancel.disabled = saving;
+    fields.reload.disabled = loading || saving;
+    fields.save.textContent = saving ? '保存中…' : pendingSaved ? '刷新界面' : '保存';
+    dialog.setAttribute('aria-busy', String(loading || saving));
+  }
+
+  async function loadSaved() {
+    if (!editingId || saving) return;
+    const serial = ++loadSerial;
+    loading = true;
+    errorMessage();
+    renderControls();
+    try {
+      const { agent } = await api(`/api/agents/${encodeURIComponent(editingId)}`);
+      if (serial !== loadSerial || !dialog.open) return;
+      if (!agent || agent.id !== editingId || typeof agent.name !== 'string' || typeof agent.definition !== 'string' || agent.revision == null) {
+        throw new Error('角色数据不完整，请重新载入。');
+      }
+      fields.name.value = agent.name;
+      fields.definition.value = agent.definition;
+      revision = agent.revision;
+      conflicted = false;
+      fields.reload.hidden = true;
+    } catch (error) {
+      if (serial !== loadSerial || !dialog.open) return;
+      errorMessage(error.message || '读取角色失败，请重试。');
+      fields.reload.hidden = false;
+    } finally {
+      if (serial === loadSerial) {
+        loading = false;
+        renderControls();
+      }
+    }
+  }
+
+  async function open(id = '') {
+    if (!canOpen() || saving) return;
+    ++loadSerial;
+    fields.form.reset();
+    editingId = id;
+    revision = undefined;
+    loading = false;
+    conflicted = false;
+    pendingSaved = null;
+    fields.title.textContent = id ? '编辑角色' : '创建角色';
+    fields.reload.hidden = true;
+    errorMessage();
+    renderControls();
+    dialog.showModal();
+    if (id) await loadSaved();
+    if (dialog.open) fields.name.focus();
+  }
+
+  fields.form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (loading || saving || conflicted || !dialog.open) return;
+    const name = fields.name.value.trim();
+    const definition = fields.definition.value;
+    if (!pendingSaved && (!name || !definition.trim())) {
+      errorMessage('请填写名称和角色设定。');
+      (!name ? fields.name : fields.definition).focus();
+      return;
+    }
+    if (editingId && revision == null) {
+      errorMessage('请先重新载入角色，再保存。');
+      fields.reload.hidden = false;
+      return;
+    }
+    saving = true;
+    onBusyChanged(true);
+    errorMessage();
+    renderControls();
+    try {
+      if (!pendingSaved) {
+        const result = await api(editingId ? `/api/agents/${encodeURIComponent(editingId)}` : '/api/agents',
+          { name, definition, ...(editingId ? { revision } : {}) }, editingId ? 'PATCH' : 'POST');
+        if (!result.agent?.id) throw new Error('保存结果不完整，请重新载入角色列表。');
+        pendingSaved = { agent: result.agent, created: !editingId };
+      }
+      await onSaved(pendingSaved.agent, { created: pendingSaved.created });
+      dialog.close();
+    } catch (error) {
+      if (error.status === 409) {
+        conflicted = true;
+        fields.reload.hidden = false;
+        errorMessage('此角色已在别处更新。你的草稿已保留；可先复制草稿，再重新载入已保存版本。');
+      } else {
+        errorMessage(pendingSaved ? `角色已保存，但界面刷新失败：${error.message}。请点击“刷新界面”重试。` : error.message);
+      }
+    } finally {
+      saving = false;
+      onBusyChanged(false);
+      renderControls();
+    }
+  });
+  fields.reload.addEventListener('click', () => void loadSaved());
+  fields.cancel.addEventListener('click', () => { if (!saving) dialog.close(); });
+  dialog.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
+  dialog.addEventListener('close', () => { ++loadSerial; });
+  return { open };
 }
 
 function selectedScope() { return { childId: state.childId, agentId: state.agentId }; }
@@ -120,7 +247,7 @@ function renderSelectors() {
     ui['agent-avatar'].classList.toggle('is-fallback', avatar === fallbackAvatar);
   }
   put('agent-name', selected?.name || '选择 Agent');
-  put('agent-description', selected?.description || '');
+  put('agent-description', selected?.definition?.replace(/\s+/g, ' ').slice(0, 72) || '');
   const modelName = state.model.name || '聊天模型';
   const text = state.model.mode === 'demo' ? `演示模式 · ${modelName}`
     : state.model.configured ? modelName : (state.agents.length ? '模型尚未配置' : '正在连接');
@@ -142,7 +269,7 @@ function renderSelectors() {
 }
 
 function updateControls() {
-  const locked = state.sending || state.busy;
+  const locked = state.sending || state.busy || state.editorSaving;
   const scopeLocked = locked || state.pendingMessages.length > 0;
   const closed = state.conversation?.session?.status === 'closed';
   const minimumAge = agent()?.minimumAge;
@@ -151,9 +278,10 @@ function updateControls() {
   ui['child-select'].disabled = scopeLocked || !state.children.length;
   ui['session-select'].disabled = scopeLocked || !state.sessions.length;
   ui['new-child'].disabled = scopeLocked;
+  ui['new-agent'].disabled = scopeLocked;
   ui['new-session'].disabled = scopeLocked || !hasScope() || blocked;
   ui['chat-input'].disabled = !hasScope() || closed || blocked;
-  ui['chat-input'].placeholder = !state.childId ? '先选择或创建用户' : blocked ? `此角色仅限${minimumAge}岁及以上，请切换或创建成年用户` : closed ? '此会话已结束，可开启新会话' : `给${agent()?.name || 'Agent'}发消息…`;
+  ui['chat-input'].placeholder = !state.agentId ? '先创建或选择角色' : !state.childId ? '先选择或创建用户' : blocked ? `此角色仅限${minimumAge}岁及以上，请切换或创建成年用户` : closed ? '此会话已结束，可开启新会话' : `给${agent()?.name || 'Agent'}发消息…`;
   ui['send-button'].disabled = locked || !hasScope() || closed || blocked || !ui['chat-input'].value.trim();
   syncAgentGalleryRoute();
 }
@@ -227,8 +355,8 @@ function renderChat(messages = [], loading = false) {
   const rows = messages.map(message => chatMessage(message.role, message.text ?? message.content ?? '', false, message.parts).row);
   if (empty) {
     empty.hidden = Boolean(rows.length);
-    put('chat-empty-title', loading ? '正在加载会话…' : (state.childId ? `和${agent()?.name || 'Agent'}聊聊` : '选择用户，开始试聊'));
-    put('chat-empty-description', loading ? '' : (state.childId ? '发一条消息，就可以开始这次对话。' : '右上角可以创建一个用户，填写姓名、年龄和兴趣。'));
+    put('chat-empty-title', loading ? '正在加载会话…' : !state.agents.length ? '创建第一个角色' : (state.childId ? `和${agent()?.name || 'Agent'}聊聊` : '选择用户，开始试聊'));
+    put('chat-empty-description', loading ? '' : !state.agents.length ? '点击“创建角色”，填写名称和角色设定。' : (state.childId ? '发一条消息，就可以开始这次对话。' : '右上角可以创建一个用户，填写姓名、年龄和兴趣。'));
     ui.messages.replaceChildren(...rows);
   } else if (rows.length) ui.messages.replaceChildren(...rows);
   else ui.messages.replaceChildren(node('div', 'panel-empty', state.childId ? '发一条消息开始聊天。' : '先选择或创建用户。'));
@@ -986,7 +1114,7 @@ async function refreshUsage() {
 }
 
 async function runAction(action) {
-  if (state.busy || state.sending || state.pendingMessages.length) return;
+  if (state.busy || state.editorSaving || state.sending || state.pendingMessages.length) return;
   show('app-error', '');
   state.busy = true;
   updateControls();
@@ -1171,6 +1299,7 @@ function fitComposer() {
 }
 
 function installListeners() {
+  ui['new-agent'].addEventListener('click', () => void agentEditor.open());
   ui['child-select'].addEventListener('change', () => runAction(async () => {
     state.childId = ui['child-select'].value;
     await changeScope();
@@ -1234,12 +1363,36 @@ async function loadState(data) {
   await changeScope(!versionChanged && saved.agentId === state.agentId && saved.childId === state.childId ? saved.sessionId : '');
 }
 
+async function applyAgentChange(savedAgent, { created }) {
+  const data = await api('/api/state');
+  if (!data.agents?.some(item => item.id === savedAgent.id)) throw new Error('新角色尚未载入，请重试。');
+  state.agents = data.agents;
+  state.model = data.model || {};
+  syncAgentGalleryRoute.refresh();
+  if (created) {
+    state.agentId = savedAgent.id;
+    await changeScope();
+  } else {
+    // Editing keeps the selected user, session, conversation and memory view.
+    renderSelectors();
+    saveSelection();
+  }
+}
+
+const agentEditor = installAgentEditor({
+  canOpen: () => !state.busy && !state.sending && !state.editorSaving && !state.pendingMessages.length,
+  onSaved: applyAgentChange,
+  onBusyChanged: value => { state.editorSaving = value; updateControls(); },
+});
+
 const syncAgentGalleryRoute = installAgentGallery({
   trigger: ui['agent-select'],
   getAgents: () => state.agents,
   getSelectedId: () => state.agentId,
   getDataVersion: () => state.dataVersion,
   avatarFor: selected => selected.avatar || avatars.get(selected.id) || fallbackAvatar,
+  onCreate: () => agentEditor.open(),
+  onEdit: id => agentEditor.open(id),
   onSelect: id => runAction(async () => {
     if (!state.agents.some(item => item.id === id)) return;
     state.agentId = id;
@@ -1250,13 +1403,23 @@ installListeners();
 void runAction(async () => loadState(await api('/api/state')));
 
 setInterval(async () => {
-  if (document.hidden || !hasScope() || state.polling || state.busy || state.sending || state.pendingMessages.length) return;
+  if (document.hidden || !hasScope() || state.polling || state.busy || state.editorSaving || state.sending || state.pendingMessages.length) return;
   state.polling = true;
   try {
     const data = await api('/api/state');
-    if (state.busy || state.sending || state.pendingMessages.length) return;
+    if (state.busy || state.editorSaving || state.sending || state.pendingMessages.length) return;
     if (state.dataVersion !== (data.dataVersion || '')) await runAction(() => loadState(data));
-    else await Promise.all([refreshMemory(), refreshUsage()]);
+    else {
+      if (JSON.stringify(state.agents) !== JSON.stringify(data.agents || [])) {
+        state.agents = data.agents || [];
+        syncAgentGalleryRoute.refresh();
+        if (!state.agents.some(item => item.id === state.agentId)) {
+          state.agentId = state.agents[0]?.id || '';
+          await changeScope();
+        } else renderSelectors();
+      }
+      await Promise.all([refreshMemory(), refreshUsage()]);
+    }
   } catch { /* An active action shows its own network errors. */ }
   finally { state.polling = false; }
 }, 2600);

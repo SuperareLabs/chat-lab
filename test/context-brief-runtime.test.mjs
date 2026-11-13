@@ -1,3 +1,4 @@
+import { loadSouls } from '../lib/prompts.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as pause } from 'node:timers/promises';
@@ -26,7 +27,7 @@ test('HTTP chat injects cached grouped source text while original memory and ove
   let calls = 0, release;
   const gate = new Promise(resolve => { release = resolve; }); t.after(() => release?.());
   const inputs = [];
-  const lab = createLabServer({ dbPath: ':memory:', contextBriefEnabled: true, allowDataReset: false,
+  const lab = createLabServer({ souls: loadSouls(), dbPath: ':memory:', contextBriefEnabled: true, allowDataReset: false,
     provider: { async chat(options) { inputs.push(options.messages); return { content: '在。', toolCalls: [], receipt: { finish_reason: 'stop' } }; } },
     memoryProvider: { async chat(options) {
       assert.equal(options.responseFormat.json_schema.name, 'context_brief_selection_v1'); calls++;
@@ -67,7 +68,7 @@ test('HTTP chat injects cached grouped source text while original memory and ove
 
 test('bad brief output falls back to current sources and reads never retry the paid request', async t => {
   let calls = 0;
-  const lab = createLabServer({ dbPath: ':memory:', contextBriefEnabled: true,
+  const lab = createLabServer({ souls: loadSouls(), dbPath: ':memory:', contextBriefEnabled: true,
     provider: { async chat() { throw new Error('unused'); } },
     memoryProvider: { async chat() { calls++; return { content: '{"groups":[],"deferredIds":[]}', receipt: { finish_reason: 'stop' } }; } } });
   await lab.listen(0); t.after(() => lab.close());

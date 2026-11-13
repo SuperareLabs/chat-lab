@@ -1,10 +1,11 @@
+import { loadSouls } from '../lib/prompts.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createLabServer } from '../server.mjs';
 
 test('adult character gates both session creation and direct chat before persisting or calling models', async t => {
   let calls = 0;
-  const lab = createLabServer({ provider: { async chat(options) {
+  const lab = createLabServer({ souls: loadSouls(), provider: { async chat(options) {
     calls++;
     options.onDelta?.('那我可当真了。');
     return { content: '那我可当真了。', toolCalls: [], receipt: { finish_reason: 'stop' } };

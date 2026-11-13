@@ -31,29 +31,14 @@ function image(src, className, alt, fallback) {
   return node;
 }
 
-function appendField(side, key, title, copy) {
-  if (!copy || (Array.isArray(copy) && !copy.length)) return;
-  const field = element('section', 'gallery-field');
-  field.dataset.field = key;
-  field.append(element('h4', 'gallery-field-title', title));
-  if (Array.isArray(copy)) {
-    const tags = element('ul', 'gallery-tags');
-    for (const tag of copy) tags.append(element('li', 'gallery-tag', tag));
-    field.append(tags);
-  } else {
-    field.append(element('p', 'gallery-field-copy', copy));
-  }
-  side.append(field);
-}
-
-function renderCard(article, agent, avatar) {
+function renderCard(article, agent, avatar, onEdit) {
   const card = agent.card || {};
-  const identity = card.identity || {};
-  const name = identity.name || agent.name;
+  const name = agent.name;
   const portrait = card.portrait || avatar;
   const cutout = /-portrait\.(?:webp|png)$/i.test(portrait) || card.theme === 'amber';
   article.dataset.theme = card.theme || 'fern';
   article.dataset.portraitStyle = cutout ? 'cutout' : 'avatar';
+  article.dataset.layout = 'definition';
 
   const hero = element('div', 'gallery-portrait');
   const orbit = element('div', 'gallery-orbit');
@@ -64,9 +49,6 @@ function renderCard(article, agent, avatar) {
   const meta = element('div', 'gallery-character-meta');
   meta.append(element('h3', 'gallery-character-name', name));
   if (agent.minimumAge) meta.append(element('p', 'gallery-alias', `${agent.minimumAge}+ · 成年用户限定`));
-  const role = identity.role || agent.description;
-  if (role) meta.append(element('p', 'gallery-character-role', role));
-  if (identity.aliases?.length) meta.append(element('p', 'gallery-alias', identity.aliases.join(' · ')));
   hero.append(orbit, meta);
   if (card.voice?.mode === 'reference' && /^\/assets\/voices\/[\w-]+\.(?:mp3|wav|m4a)$/.test(card.voice.sample)) {
     const voice = element('section', 'gallery-voice');
@@ -81,20 +63,29 @@ function renderCard(article, agent, avatar) {
     hero.append(voice);
   }
 
-  const left = element('div', 'gallery-side gallery-side-left');
-  appendField(left, 'identity', '身份', identity.relationship);
-  appendField(left, 'personality', '性格', card.personality);
-  appendField(left, 'worldview', '世界观', card.worldview);
-  appendField(left, 'background', '背景', card.background);
-
-  const right = element('div', 'gallery-side gallery-side-right');
-  appendField(right, 'speakingStyle', '说话方式', card.speakingStyle);
-  appendField(right, 'replyStyle', '接话方式', card.replyStyle);
-  appendField(right, 'specialties', '擅长', card.specialties);
-  appendField(right, 'dailyLife', '日常', card.dailyLife);
-
-  const connections = svgElement('svg', { class: 'gallery-connections', 'aria-hidden': 'true', focusable: 'false' });
-  article.replaceChildren(connections, hero, left, right);
+  const definition = element('section', 'gallery-definition');
+  const heading = element('div', 'gallery-definition-heading');
+  heading.append(element('h4', 'gallery-definition-title', '角色设定'));
+  const edit = element('button', 'gallery-copy-button gallery-edit-button', '编辑角色');
+  edit.type = 'button';
+  edit.addEventListener('click', () => onEdit?.(agent.id));
+  heading.append(edit);
+  const text = agent.definition || '';
+  const copy = element('p', 'gallery-definition-copy', text || '暂无角色设定。');
+  definition.append(heading, copy);
+  if (text.length > 420 || text.split(/\r?\n/).length > 8) {
+    copy.classList.add('is-collapsed');
+    const expand = element('button', 'gallery-definition-expand', '展开完整设定');
+    expand.type = 'button';
+    expand.setAttribute('aria-expanded', 'false');
+    expand.addEventListener('click', () => {
+      const collapsed = copy.classList.toggle('is-collapsed');
+      expand.setAttribute('aria-expanded', String(!collapsed));
+      expand.textContent = collapsed ? '展开完整设定' : '收起设定';
+    });
+    definition.append(expand);
+  }
+  article.replaceChildren(hero, definition);
 }
 
 function drawConnections(article) {
@@ -138,9 +129,10 @@ function parseGalleryRoute(hash) {
   return { agentId, view: match[2] ? 'prompt' : 'overview' };
 }
 
-export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarFor, onSelect, getDataVersion = () => '' }) {
+export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarFor, onSelect, onCreate, onEdit, getDataVersion = () => '' }) {
   const dialog = document.getElementById('agent-gallery');
   const closeButton = document.getElementById('agent-gallery-close');
+  const createButton = document.getElementById('agent-gallery-create');
   const article = document.getElementById('agent-gallery-card');
   const roster = document.getElementById('agent-gallery-roster');
   const status = document.getElementById('agent-gallery-status');
@@ -212,7 +204,7 @@ export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarF
     );
   }
 
-  function cacheKey(id, version) { return `${version}\u0000${id}`; }
+  function cacheKey(id, version) { return `${version}\u0000${id}\u0000${getAgents().find(agent => agent.id === id)?.revision ?? ''}`; }
 
   async function loadPrompt(force = false) {
     stopLoading();
@@ -299,7 +291,7 @@ export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarF
     if (!agent) return;
     const changed = previewId !== id;
     previewId = id;
-    renderCard(article, agent, avatarFor(agent));
+    renderCard(article, agent, avatarFor(agent), agentId => { close(); void onEdit?.(agentId); });
     observeDiagram();
     for (const button of roster.children) button.setAttribute('aria-pressed', String(button.dataset.agentId === previewId));
     const isSelected = id === getSelectedId();
@@ -392,6 +384,7 @@ export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarF
     next.focus({ preventScroll: true });
   });
   closeButton.addEventListener('click', close);
+  createButton.addEventListener('click', () => { close(); void onCreate?.(); });
   promptRetry.addEventListener('click', () => void loadPrompt(true));
   promptCopy.addEventListener('click', async () => {
     const payload = detail;
@@ -424,5 +417,17 @@ export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarF
   window.addEventListener('hashchange', syncRoute);
   window.addEventListener('popstate', syncRoute);
   window.addEventListener('resize', scheduleConnections);
+  syncRoute.refresh = () => {
+    cache.clear();
+    stopLoading();
+    detail = null;
+    if (!dialog.open) return;
+    const agents = getAgents();
+    fillRoster(agents, getSelectedId());
+    const id = agents.find(agent => agent.id === previewId)?.id || getSelectedId() || agents[0]?.id;
+    if (!id) { close(); return; }
+    preview(id);
+    if (view === 'prompt') void loadPrompt(true);
+  };
   return syncRoute;
 }

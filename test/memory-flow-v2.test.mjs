@@ -1,3 +1,4 @@
+import { loadSouls } from '../lib/prompts.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { setTimeout as pause } from 'node:timers/promises';
@@ -54,7 +55,7 @@ test('HTTP lifecycle maintains overview, recalls event details, refreshes origin
     if (last.content === '从旧记忆里找南京城墙那次，再读详情。') return invoke('recall_memory', { query: '南京城墙' });
     return answer('在，咱们接着聊。');
   } };
-  const lab = createLabServer({ provider, dbPath: ':memory:', clock: () => new Date(instant) });
+  const lab = createLabServer({ souls: loadSouls(), provider, dbPath: ':memory:', clock: () => new Date(instant) });
   const { port } = await lab.listen(0);
   t.after(() => lab.close());
   const origin = 'http://127.0.0.1:' + port;

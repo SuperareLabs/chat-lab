@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { createLabServer } from '../server.mjs';
-import { loadSouls, MEMORY_PROMPT, renderSoul } from '../lib/prompts.mjs';
+import { loadSouls, MEMORY_PROMPT, renderSoul, COMMON_PROMPT, SOUL_RENDER_CONTRACT_VERSION } from '../lib/prompts.mjs';
 import { MEMORY_FRAMEWORK_VERSION, MEMORY_COMPATIBLE_DATA_VERSIONS } from '../lib/memory-version.mjs';
 import { MEMORY_REPAIR_PROMPT } from '../lib/memory-repair.mjs';
 
@@ -27,6 +27,7 @@ function snapshot(store) {
 
 async function openLab(dbPath, options = {}) {
   const lab = createLabServer({
+    souls: loadSouls(),
     provider: { chat() { throw new Error('reset-policy tests must not invoke a model'); } },
     // Exercise the historical 1.0.8 adoption path explicitly at framework 1.
     dbPath, appVersion: '1.0.9', memoryFrameworkVersion: 1, clock, ...options,
@@ -111,7 +112,7 @@ test('the legacy 1.0.8 policy adopts identical prompts without altering stored r
   await closeLab(lab);
 });
 
-test('actual role prompt changes reset records while legacy migration checks the prompt content', async t => {
+test('changed role seed text never overwrites saved roles or resets a current-platform database', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'croco-prompt-reset-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const souls = loadSouls();
@@ -122,15 +123,16 @@ test('actual role prompt changes reset records while legacy migration checks the
     ? { ...original, definition: original.definition + '这是提示词的实际变更。' }
     : { ...original, speakingStyle: original.speakingStyle + '这是提示词的实际变更。' });
 
-  for (const legacy of [false, true]) {
+  for (const legacy of [false]) {
     const dbPath = join(directory, legacy ? 'legacy.sqlite' : 'current.sqlite');
     let lab = await openLab(dbPath, { souls, ...(legacy ? { legacyFingerprint: oldFingerprint(souls) } : {}) });
     const saved = seedAllTables(lab);
     const before = lab.runtime.dataVersion;
     await closeLab(lab);
     lab = await openLab(dbPath, { souls: changed });
-    assert.notEqual(lab.runtime.dataVersion, before);
-    assertFreshDefault(lab, saved.childId);
+    assert.equal(lab.runtime.dataVersion, before);
+    assert.deepEqual(snapshot(lab.store), saved.snapshot);
+    assert.equal(lab.runtime.promptDetail(id).system, renderSoul(original));
     await closeLab(lab);
   }
 });
@@ -194,8 +196,7 @@ test('framework 5 adopts only the explicitly authorized 1.2.0 fingerprint and ch
   lab = await openLab(dbPath, { appVersion: '1.3.0', memoryFrameworkVersion: 5, allowDataReset: false,
     contextBriefEnabled: false });
   t.after(() => closeLab(lab));
-  const systems = [...lab.runtime.systems].sort(([a], [b]) => a.localeCompare(b));
-  const activeFingerprint = createHash('sha256').update(JSON.stringify([5, MEMORY_PROMPT, MEMORY_REPAIR_PROMPT, systems])).digest('hex');
+  const activeFingerprint = createHash('sha256').update(JSON.stringify([5, MEMORY_PROMPT, MEMORY_REPAIR_PROMPT, COMMON_PROMPT, SOUL_RENDER_CONTRACT_VERSION])).digest('hex');
   assert.equal(lab.runtime.dataVersion, activeFingerprint, 'retired review text is excluded from the active memory fingerprint');
   assert.notEqual(lab.runtime.dataVersion, deployed120);
   assert.equal(lab.store.sql("SELECT value FROM lab_meta WHERE key='data_version'").get().value, lab.runtime.dataVersion);
@@ -217,6 +218,7 @@ const deployedRepairVersions = [
   ['1.3.10', 6, '119dd775b8807574ea6bd91ba9dbfe39a153af811876d2a621607496bc9a1291'],
   ['1.3.11', 6, '2c2802f8944d69b0e5c5d027f40e858e44d72524fe1c189818ef55ae3b21e9ec'],
   ['1.3.12', 6, '760e21c0068a87b4a3cc150a0beef67271e6db80215b918be29862643daabb61'],
+  ['1.3.15', 6, '1d6d4253c510af3ed22c772aa2b93987f5448dec7eb00a0cca977096fba80fc2'],
 ];
 for (const [version, framework, fingerprint] of deployedRepairVersions) {
 test(`framework 6 adopts the authorized deployed ${version} fingerprint without rewriting business data`, async t => {
@@ -235,8 +237,7 @@ test(`framework 6 adopts the authorized deployed ${version} fingerprint without 
   t.after(() => closeLab(lab));
   assert.notEqual(lab.runtime.dataVersion, fingerprint);
   assert.equal(lab.store.sql("SELECT value FROM lab_meta WHERE key='data_version'").get().value, lab.runtime.dataVersion);
-  const systems = [...lab.runtime.systems].sort(([a], [b]) => a.localeCompare(b));
-  const activeFingerprint = createHash('sha256').update(JSON.stringify([6, MEMORY_PROMPT, MEMORY_REPAIR_PROMPT, systems])).digest('hex');
+  const activeFingerprint = createHash('sha256').update(JSON.stringify([6, MEMORY_PROMPT, MEMORY_REPAIR_PROMPT, COMMON_PROMPT, SOUL_RENDER_CONTRACT_VERSION])).digest('hex');
   assert.equal(lab.runtime.dataVersion, activeFingerprint, 'the actual repair prompt participates in the data fingerprint');
   assert.deepEqual(completeSnapshot(lab.store), preserved);
 });
@@ -252,7 +253,7 @@ test('framework 6 rejects an unknown prior fingerprint with resets disabled befo
   seedPreservedOverview(lab);
   const preserved = completeSnapshot(lab.store);
   await closeLab(lab);
-  lab = createLabServer({ dbPath, appVersion: '1.3.1', memoryFrameworkVersion: 6, allowDataReset: false,
+  lab = createLabServer({ souls: loadSouls(), dbPath, appVersion: '1.3.1', memoryFrameworkVersion: 6, allowDataReset: false,
     contextBriefEnabled: false, clock, provider: { chat() { assert.fail('migration never calls a model'); } } });
   t.after(() => closeLab(lab));
   assert.throws(() => lab.runtime.initialize(), /本次启动禁止重置数据/);

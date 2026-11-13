@@ -1,3 +1,4 @@
+import { loadSouls } from '../lib/prompts.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ChatRuntime } from '../lib/runtime.mjs';
@@ -17,7 +18,7 @@ function fixture(t, respond) {
   const store = new ChatStore(':memory:');
   const requests = [];
   let f;
-  const runtime = new ChatRuntime({ store, clock: () => new Date(NOW), appVersion: 'repair-flow-test',
+  const runtime = new ChatRuntime({ souls: loadSouls(), store, clock: () => new Date(NOW), appVersion: 'repair-flow-test',
     model: { name: 'unused-chat', configured: true }, memoryModel: { name: model, configured: true },
     allowDataReset: false, contextBriefEnabled: false,
     provider: { async chat() { assert.fail('repair flow must use the dedicated memory provider'); } },

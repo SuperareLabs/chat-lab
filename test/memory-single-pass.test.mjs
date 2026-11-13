@@ -1,3 +1,4 @@
+import { loadSouls } from '../lib/prompts.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ChatRuntime } from '../lib/runtime.mjs';
@@ -10,7 +11,7 @@ test('one extraction response atomically adds, corrects and selects overview sou
   const receipt = { model: 'doubao-seed-2-1-lite-260915', finish_reason: 'stop',
     usage: { prompt_tokens: 20, completion_tokens: 12, total_tokens: 32 } };
   let oldId, rawOutput;
-  const runtime = new ChatRuntime({ store, clock: () => new Date(now), appVersion: '1.3.0',
+  const runtime = new ChatRuntime({ souls: loadSouls(), store, clock: () => new Date(now), appVersion: '1.3.0',
     model: { name: 'unused-chat', configured: true }, memoryModel: { name: receipt.model, configured: true },
     allowDataReset: false, contextBriefEnabled: false,
     provider: { async chat() { assert.fail('memory extraction must use the dedicated provider'); } },
