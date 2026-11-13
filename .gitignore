@@ -1,0 +1,27 @@
+# Local user data, model receipts, backups and raw evaluation records
+/data/
+/verification/
+
+# Credentials and local overrides (runtime.env contains public defaults only)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*
+
+# Optional private voice samples are not part of the public baseline
+/public/assets/voices/
+
+# Rebuildable and machine-local files
+node_modules/
+coverage/
+*.sqlite
+*.sqlite-*
+*.log
+*.tap
+.DS_Store
+*.swp
+*.tmp

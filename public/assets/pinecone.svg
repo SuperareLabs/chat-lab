@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <title>松果</title>
+  <defs>
+    <linearGradient id="body" x1=".15" y1=".08" x2=".82" y2=".98" gradientUnits="objectBoundingBox">
+      <stop stop-color="#d98b47"/>
+      <stop offset=".48" stop-color="#b96738"/>
+      <stop offset="1" stop-color="#814333"/>
+    </linearGradient>
+    <linearGradient id="scale" x1=".22" y1=".1" x2=".86" y2=".93" gradientUnits="objectBoundingBox">
+      <stop stop-color="#f2b565"/>
+      <stop offset=".6" stop-color="#d78a49"/>
+      <stop offset="1" stop-color="#ae653a"/>
+    </linearGradient>
+    <linearGradient id="face" x1=".16" y1=".06" x2=".84" y2=".9" gradientUnits="objectBoundingBox">
+      <stop stop-color="#ffe9ae"/>
+      <stop offset=".6" stop-color="#f6c581"/>
+      <stop offset="1" stop-color="#dea36b"/>
+    </linearGradient>
+    <linearGradient id="leaf" x1=".16" y1=".18" x2=".86" y2=".89" gradientUnits="objectBoundingBox">
+      <stop stop-color="#b3bf77"/>
+      <stop offset="1" stop-color="#5c865d"/>
+    </linearGradient>
+    <linearGradient id="glass" x1=".18" y1=".09" x2=".86" y2=".9" gradientUnits="objectBoundingBox">
+      <stop stop-color="#d7ecb9" stop-opacity=".88"/>
+      <stop offset="1" stop-color="#70b9a5" stop-opacity=".63"/>
+    </linearGradient>
+  </defs>
+  <g stroke="#532f2b" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <!-- The feet sit behind the lowest pair of scales. -->
+    <path fill="#9c5936" d="M209 368c-9 19-15 35-12 49l33 13 26-16 1-41z"/>
+    <path fill="#9c5936" d="M271 371c-2 19 2 35 11 48l37 1 19-18-20-39z"/>
+    <path fill="#e0a05a" d="M203 408c-15-1-34 8-39 19-4 10 1 22 16 26 13 4 44 4 63-5 10-5 9-14 7-23-3-9-12-16-23-12-7 3-15-3-24-5z"/>
+    <path fill="#e0a05a" d="M290 414c-11 3-12 13-10 22 1 10 13 16 28 16 21 0 41-7 46-20 4-12-6-22-20-22-10-1-19 6-25 3-6-2-13-2-19 1z"/>
+    <path fill="none" stroke="#fff0c2" stroke-width="5" opacity=".68" d="M175 433c5-7 11-10 18-11m138-1c5-2 11-2 14 0"/>
+    <path fill="#b67444" d="M163 439c13 8 55 8 86-4 0 11-4 16-19 19-19 5-46 5-58-1-6-3-10-8-9-14zm117-4c18 10 51 9 74-7 0 16-21 25-46 25-17 0-27-7-28-18z"/>
+
+    <!-- Side limbs establish a clear silhouette. -->
+    <path fill="#a96038" d="M170 238c-23 2-45 17-54 35-13 25-12 49 6 53 9 2 18-4 23-15l17-31 16-14z"/>
+    <path fill="#de9c5c" d="M125 283c-12-3-27 7-32 20-5 11-1 26 11 31 13 6 27-4 32-14 6-11 3-30-11-37z"/>
+    <path fill="none" stroke="#895337" stroke-width="4" d="M106 308c5-4 11-5 16-3m-15 14c3-3 8-4 12-3"/>
+    <path fill="#a96038" d="M329 235c15-13 36-20 50-32 10-9 11-23 21-25 11-2 18 8 16 22-4 23-25 53-57 64l-31 4z"/>
+    <path fill="#de9c5c" d="M389 193c0-10 5-19 15-23 9-4 20 3 25 12 7 12 4 24-3 30-8 7-17 1-21-5-3-5-15-4-16-14z"/>
+
+    <!-- The cap, stem and overlapping cone scales. -->
+    <path fill="#92603a" d="M247 123c8-20 10-42 5-54-2-6-2-14 5-17 8-3 12 4 14 11 4 14 3 39-5 57z"/>
+    <path fill="url(#leaf)" stroke="#4e623e" d="M261 94c0-22 22-41 54-43-7 21-25 44-54 43z"/>
+    <path fill="url(#leaf)" stroke="#4e623e" d="M256 100c-21 4-39-6-49-25 25-4 45 6 49 25z"/>
+    <path fill="none" stroke="#52653e" stroke-width="3" d="M264 91c12-10 23-18 38-29m-46 36c-10-3-21-9-33-16"/>
+    <path fill="url(#body)" d="M257 104c-55-5-111 39-132 103-15 47-11 98 8 135 21 42 64 68 116 69 51 2 94-20 118-64 22-41 25-91 9-141-20-62-67-98-119-102z"/>
+    <path fill="url(#scale)" d="M171 167c-6-13 7-31 21-41 18-14 38-19 59-21 4 19-3 35-18 48-15 13-39 20-62 14z"/>
+    <path fill="url(#scale)" d="M259 107c34 1 64 17 84 46-21 15-54 12-75-4-16-11-19-28-9-42z"/>
+    <path fill="url(#scale)" d="M140 188c14-17 29-27 47-29 11 20 4 44-13 60-14 12-33 15-47 9 0-17 5-29 13-40z"/>
+    <path fill="url(#scale)" d="M344 166c21 8 34 30 39 54-24 5-45-1-59-20-9-13-8-25-2-35 6-3 15-2 22 1z"/>
+    <path fill="#9e5635" d="M128 251c13-8 27-11 39-7 20 5 29 19 34 35-17 17-48 24-77 9-2-14 0-29 4-37z"/>
+    <path fill="#a95d3b" d="M340 243c12-9 29-9 45-4 4 17 3 39 1 54-26 11-61 2-77-15 2-17 14-30 31-35z"/>
+    <path fill="url(#scale)" d="M137 287c27-17 53-16 74 0 14 10 24 26 25 40-24 17-56 19-84 5-13-7-21-17-24-30-1-6 3-11 9-15z"/>
+    <path fill="url(#scale)" d="M291 327c1-17 11-35 26-44 19-11 44-10 66 5 4 19-4 32-21 43-23 15-49 13-71-4z"/>
+    <path fill="url(#scale)" d="M187 344c11-17 28-24 44-22 21 2 37 16 44 35-15 22-51 32-79 23-15-6-19-19-9-36z"/>
+    <path fill="url(#scale)" d="M268 362c7-24 29-41 51-41 15 0 30 8 40 20-9 28-36 47-65 50-19 2-28-11-26-29z"/>
+    <path fill="url(#scale)" d="M218 377c12-18 32-27 49-23 13 3 24 12 30 27-11 17-27 25-47 26-14 0-30-5-39-13-4-4 2-10 7-17z"/>
+    <path fill="none" stroke="#f8d080" stroke-width="4" opacity=".7" d="M180 149c11-11 24-17 34-19m60-9c13 3 23 8 30 14m-166 76c5-15 14-24 25-29m-22 115c10-6 22-9 33-8m146 5c12-7 24-9 36-6m-160 61c6-8 14-12 20-14m73 13c8-8 16-12 23-14m-81 43c8-6 17-9 26-9"/>
+
+    <!-- The open center holds the expression. -->
+    <path fill="url(#face)" d="M247 164c11 5 16 8 23 7 12-2 24-10 39-4 22 8 37 31 37 57 0 38-25 66-60 78-22 8-42 9-65 5-35-6-64-26-70-56-7-33 5-64 26-78 18-13 44-20 70-9z"/>
+    <path fill="#f4c28a" stroke="none" d="M156 247c12 21 39 37 66 42 43 8 94-9 122-41-13 37-55 62-100 60-48-1-77-23-88-61z"/>
+    <path fill="none" stroke="#89513a" stroke-width="5" d="M185 208c9-9 22-10 31-4m61-6c10-7 21-7 31 0"/>
+    <path fill="#fff9de" stroke-width="4.5" d="M209 219c10 0 18 11 18 24s-8 23-18 23-18-10-18-23 8-24 18-24zm81-7c11 0 19 11 19 24s-8 24-19 24-19-11-19-24 8-24 19-24z"/>
+    <ellipse cx="214" cy="241" rx="8.5" ry="12.5" fill="#482c28" stroke="none"/>
+    <ellipse cx="295" cy="234" rx="9" ry="13" fill="#482c28" stroke="none"/>
+    <circle cx="217" cy="236" r="3.1" fill="#fff7db" stroke="none"/>
+    <circle cx="299" cy="229" r="3.3" fill="#fff7db" stroke="none"/>
+    <path fill="#bf734a" stroke="#915239" stroke-width="3" d="M244 252c-1-5 3-8 9-8s11 2 11 6c0 4-5 8-10 9-5 1-9-2-10-7z"/>
+    <path fill="none" stroke="#6a3c31" stroke-width="4.5" d="M239 272c9 8 25 8 34-3"/>
+    <path fill="#db896b" stroke="none" opacity=".58" d="M186 265c8-1 17 2 17 6 0 5-6 8-13 7-7-1-13-4-12-8 0-3 4-4 8-5zm121-8c7-2 14 0 15 4 0 5-5 9-12 10-8 1-15-1-15-5 0-4 6-8 12-9z"/>
+
+    <!-- A field magnifier makes the observer role legible at thumbnail size. -->
+    <path fill="#ae633d" d="M403 179l15 9-17 39c-4 8-17 2-14-6z"/>
+    <circle cx="429" cy="151" r="32" fill="#e7b56c"/>
+    <circle cx="429" cy="151" r="24.5" fill="url(#glass)" stroke="#825842" stroke-width="3.5"/>
+    <path fill="none" stroke="#faffdf" stroke-width="4" opacity=".85" d="M414 148c1-8 7-13 14-14m-14 26 1 2"/>
+    <path fill="#de9c5c" d="M396 184c2-8 7-10 12-7 4 2 4 6 2 11 5-5 10-5 13-2 4 4 3 9-1 14-7 9-14 10-21 5-5-5-8-13-5-21z"/>
+  </g>
+</svg>

@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#eff2ee">
+  <title>全Agent轻量聊天实验台</title>
+  <link rel="icon" href="/assets/benny.png" type="image/png">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/agent-gallery.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div class="workspace">
+    <header class="workspace-header">
+      <h1>全Agent轻量聊天实验台</h1>
+      <div class="toolbar" aria-label="聊天选择">
+        <div class="toolbar-agent">
+          <span class="control-label">Agent</span>
+          <button id="agent-select" class="agent-select-button" type="button" aria-haspopup="dialog" aria-controls="agent-gallery" disabled>
+            <img id="agent-select-avatar" src="/assets/benny.png" alt="">
+            <span id="agent-select-label">正在加载…</span>
+            <svg class="agent-select-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+        <div class="toolbar-right">
+          <div class="toolbar-group">
+            <label class="control-label" for="child-select">用户</label>
+            <select id="child-select" class="select-control" disabled><option>选择用户</option></select>
+            <button id="new-child" class="icon-button" type="button" aria-label="创建用户" title="创建用户">
+              <img src="/assets/icons/person-plus.svg" alt="">
+            </button>
+          </div>
+          <div class="toolbar-group toolbar-session">
+            <label class="control-label" for="session-select">会话</label>
+            <select id="session-select" class="select-control" disabled><option>选择会话</option></select>
+          </div>
+          <button id="new-session" class="toolbar-action" type="button" disabled>
+            <img src="/assets/icons/plus-lg.svg" alt=""><span>新会话</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div id="app-error" class="app-error" role="alert" hidden></div>
+
+    <main class="stage">
+      <aside id="context-panel" class="panel inspector context-panel" aria-labelledby="context-heading" tabindex="-1">
+        <header class="panel-header inspector-header">
+          <span class="panel-icon"><img src="/assets/icons/card-text.svg" alt=""></span>
+          <h2 id="context-heading">模型上下文</h2>
+        </header>
+        <div id="context-content" class="inspector-content">
+          <p class="panel-empty">发出一条消息后，可在这里查看实际送给模型的内容。</p>
+        </div>
+      </aside>
+
+      <section class="panel chat-panel" aria-labelledby="agent-name">
+        <header class="panel-header chat-header">
+          <div class="chat-identity">
+            <img id="agent-avatar" class="agent-avatar" src="/assets/benny.png" alt="">
+            <div class="agent-copy">
+              <h2 id="agent-name">鳄鱼爸爸</h2>
+              <p id="agent-description">好奇学院院长</p>
+            </div>
+          </div>
+          <div class="panel-shortcuts" aria-label="实验详情">
+            <button id="context-toggle" class="icon-button" type="button" aria-controls="context-panel" aria-label="查看模型上下文" title="模型上下文"><img src="/assets/icons/card-text.svg" alt=""></button>
+            <button id="memory-toggle" class="icon-button" type="button" aria-controls="memory-panel" aria-label="查看记忆" title="记忆"><img src="/assets/icons/archive.svg" alt=""></button>
+          </div>
+        </header>
+
+        <div class="conversation">
+          <div id="messages" class="messages" role="log" aria-label="聊天消息" aria-live="off" tabindex="0"></div>
+          <div id="chat-empty" class="chat-empty">
+            <img src="/assets/benny.png" alt="" class="empty-avatar">
+            <p id="chat-empty-title" class="chat-empty-title">开始一段聊天</p>
+            <p id="chat-empty-description">选择用户和 Agent，就可以开始试聊。</p>
+          </div>
+        </div>
+
+        <div class="composer">
+          <div id="chat-status" class="chat-status" role="status" aria-live="polite"></div>
+          <form id="chat-form" class="chat-form">
+            <label class="visually-hidden" for="chat-input">聊天消息</label>
+            <textarea id="chat-input" name="message" rows="1" placeholder="给鳄鱼爸爸发消息…" maxlength="4000" disabled></textarea>
+            <button id="send-button" class="send-button" type="submit" aria-label="发送消息" title="发送消息" disabled><img src="/assets/icons/arrow-up.svg" alt=""></button>
+          </form>
+          <footer class="composer-meta">
+            <span id="model-status" class="model-status" aria-live="polite">正在连接实验台</span>
+            <div id="session-usage" class="session-usage" role="group" aria-label="会话用量与预估费用"></div>
+            <span id="composer-hint" class="composer-hint">Enter 发送 · Shift + Enter 换行</span>
+          </footer>
+        </div>
+      </section>
+
+      <aside id="memory-panel" class="panel inspector memory-panel" aria-labelledby="memory-heading" tabindex="-1">
+        <header class="panel-header inspector-header">
+          <span class="panel-icon"><img src="/assets/icons/archive.svg" alt=""></span>
+          <h2 id="memory-heading">记忆</h2>
+        </header>
+        <div id="memory-content" class="inspector-content">
+          <p class="panel-empty">选择用户和 Agent 后，可查看这组对话积累的记忆。</p>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <dialog id="agent-gallery" class="agent-gallery" aria-labelledby="agent-gallery-title">
+    <div class="gallery-shell">
+      <header class="gallery-header">
+        <div class="gallery-brand">
+          <span class="gallery-emblem" aria-hidden="true">
+            <svg width="30" height="30" viewBox="0 0 32 32" fill="none">
+              <circle cx="16" cy="16" r="11" stroke="currentColor" stroke-opacity=".56"/>
+              <path d="M16 1.5v5M16 25.5v5M1.5 16h5m19 0h5" stroke="currentColor" stroke-linecap="round"/>
+              <path d="m21.8 10.2-3.2 8.4-8.4 3.2 3.2-8.4 8.4-3.2Z" stroke="currentColor" stroke-linejoin="round"/>
+              <circle cx="16" cy="16" r="1.3" fill="currentColor"/>
+            </svg>
+          </span>
+          <div>
+            <p class="gallery-kicker">好奇学院</p>
+            <h2 id="agent-gallery-title">角色图鉴</h2>
+          </div>
+        </div>
+        <p class="gallery-header-note">从角色设定，了解彼此</p>
+        <button id="agent-gallery-close" class="gallery-close" type="button" aria-label="关闭角色图鉴" title="关闭角色图鉴">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+      </header>
+      <nav class="gallery-view-bar" aria-label="角色资料">
+        <div class="gallery-view-tabs" role="tablist" aria-label="查看内容">
+          <button id="agent-view-overview" class="gallery-view-tab" type="button" role="tab" aria-controls="agent-overview-view" aria-selected="true">角色概览</button>
+          <button id="agent-view-prompt" class="gallery-view-tab" type="button" role="tab" aria-controls="agent-prompt-view" aria-selected="false" tabindex="-1">提示词详情</button>
+        </div>
+        <span class="gallery-view-note">性格 · 表达 · 能力</span>
+      </nav>
+      <section id="agent-overview-view" class="gallery-overview-view" role="tabpanel" aria-labelledby="agent-view-overview">
+        <article id="agent-gallery-card" class="gallery-card"></article>
+      </section>
+      <section id="agent-prompt-view" class="gallery-prompt-view" role="tabpanel" aria-labelledby="agent-view-prompt" hidden>
+        <aside class="gallery-prompt-sidebar">
+          <h3 class="gallery-prompt-sidebar-heading">提示词组成</h3>
+          <div id="agent-prompt-tabs" class="gallery-prompt-sections" role="group" aria-label="提示词层级"></div>
+          <div id="agent-prompt-meta" class="gallery-prompt-meta"></div>
+          <p class="gallery-prompt-context">这里显示当前运行版本的固定提示词。时间、用户资料、用户概括和会话记录会在聊天时注入；具体记忆按需读取。</p>
+        </aside>
+        <div class="gallery-prompt-document">
+          <header class="gallery-prompt-document-header">
+            <div>
+              <h3 id="agent-prompt-heading">完整提示词</h3>
+              <p id="agent-prompt-description">读取后端当前实际加载的原文</p>
+            </div>
+            <button id="agent-prompt-copy" class="gallery-copy-button" type="button">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" stroke="currentColor" stroke-width="1.5"/></svg>
+              <span>复制原文</span>
+            </button>
+          </header>
+          <pre id="agent-prompt-content" class="gallery-prompt-content" tabindex="0" aria-labelledby="agent-prompt-heading"></pre>
+          <div class="gallery-prompt-feedback">
+            <p id="agent-prompt-copy-status" class="gallery-prompt-copy-status" role="status" aria-live="polite"></p>
+            <button id="agent-prompt-retry" class="gallery-copy-button" type="button" hidden>重新读取</button>
+          </div>
+        </div>
+      </section>
+      <footer class="gallery-footer">
+        <div class="gallery-roster" id="agent-gallery-roster" role="group" aria-label="预览角色"></div>
+        <div class="gallery-actions">
+          <p id="agent-gallery-status" class="gallery-status" aria-live="polite"></p>
+          <button id="agent-gallery-confirm" class="gallery-confirm" type="button">
+            <span id="agent-gallery-confirm-label">选用此角色</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4.5 12h14m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </footer>
+    </div>
+  </dialog>
+
+  <dialog id="child-dialog" class="child-dialog" aria-labelledby="child-dialog-title">
+    <form id="child-form" class="child-form">
+      <h2 id="child-dialog-title">创建用户</h2>
+      <label for="child-name">名字</label>
+      <input id="child-name" name="name" required maxlength="48" autocomplete="off" placeholder="输入名字">
+      <label for="child-age">年龄</label>
+      <input id="child-age" name="age" type="number" min="1" max="120" step="1" inputmode="numeric" placeholder="可留空">
+      <label for="child-interests">兴趣</label>
+      <input id="child-interests" name="interests" maxlength="240" autocomplete="off" placeholder="例如：画画、踢足球">
+      <p id="child-error" class="field-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button id="child-cancel" class="secondary-button" type="button">取消</button>
+        <button class="primary-button" type="submit">创建</button>
+      </div>
+    </form>
+  </dialog>
+  <div id="usage-tooltip" class="usage-tooltip" role="tooltip" hidden></div>
+</body>
+</html>
