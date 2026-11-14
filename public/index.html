@@ -10,21 +10,12 @@
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/agent-gallery.css">
   <link rel="stylesheet" href="/motion-ui.css">
-  <script type="module" src="/motion-ui.js"></script>
   <script type="module" src="/app.js"></script>
 </head>
 <body>
   <div class="workspace" id="workspace">
     <header class="workspace-header">
-      <div class="brand-row">
-        <div class="brand-lockup">
-          <span class="brand-mark" aria-hidden="true">
-            <svg width="34" height="34" viewBox="0 0 40 40" fill="none"><path d="M8 7h16a6 6 0 0 1 6 6v8a6 6 0 0 1-6 6H14l-7 6V13a6 6 0 0 1 1-6Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M16 14h13a5 5 0 0 1 5 5v13l-6-5h-7a5 5 0 0 1-5-5v-8Z" fill="currentColor"/><circle cx="25" cy="20" r="2" fill="#e9eddf"/></svg>
-          </span>
-          <div class="brand-copy"><p class="brand-wordmark">Chat Lab<span>.</span></p><h1>全Agent轻量聊天实验台</h1></div>
-        </div>
-        <div class="brand-aside"><p>让每种性格，都有自己的回响。</p><button id="intro-replay" class="intro-replay" type="button" aria-label="重播开场动画"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m7 4 9 6-9 6V4Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><span>观看开场</span></button></div>
-      </div>
+      <h1 class="visually-hidden">全Agent轻量聊天实验台</h1>
       <div class="toolbar" aria-label="聊天选择">
         <div class="toolbar-agent">
           <span class="control-label">Agent</span>
@@ -85,7 +76,6 @@
         </header>
 
         <div class="conversation">
-          <div class="conversation-watermark" aria-hidden="true"><span></span><span></span><span></span></div>
           <div id="messages" class="messages" role="log" aria-label="聊天消息" aria-live="off" tabindex="0"></div>
           <div id="chat-empty" class="chat-empty">
             <img src="/assets/benny.png" alt="" class="empty-avatar">
