@@ -2,8 +2,9 @@
 
 一个用来验证角色聊天、工具调用和长期记忆的本地实验台。面向任意 SOUL 和任意年龄的用户，使用 Node.js 原生 HTTP、SQLite 与浏览器页面，无第三方 Node 包依赖。
 
-当前封版为 **1.1.0**，分支 **`version1.1.0`**，标签 **`v1.1.0`**，记忆框架版本仍为 **6**；首个公开基线保留在 `version1.0.0`。已接入手动创建、编辑角色：只填写名称与一段完整角色设定，保存后下一轮生效。联网继续提供文字资料。
+当前为 **`design/motionsites-ui` 界面优化分支**，应用版本 **1.1.1**，记忆框架仍为 **6**。已封版的1.1.0固定在 `version1.1.0` 分支和 `v1.1.0` 标签。本轮统一工作台、角色图鉴、表单与用量展示，并加入可跳过、可重播的1.5秒开场；角色设定、工具和记忆逻辑保持原有行为。
 
+- [界面与动效设计说明](docs/design/motion-ui.md)
 - [1.1.0 版本说明](docs/releases/v1.1.0.md)
 - [架构与执行流程](docs/architecture.md)
 - [鳄鱼爸爸角色设定原文（试用稿）](docs/benny-role-setting.md)
@@ -17,7 +18,7 @@
 需要 Git、Node.js 24 或更新版本，以及可以调用所配置模型的火山方舟 API Key。
 
 ```sh
-git clone --branch version1.1.0 https://github.com/SuperareLabs/chat-lab.git
+git clone --branch design/motionsites-ui https://github.com/SuperareLabs/chat-lab.git
 cd chat-lab
 export ARK_API_KEY="替换为你的方舟_API_Key"
 npm start
@@ -49,6 +50,7 @@ CHAT_HOST=127.0.0.1 PORT=4334 npm start
 3. 选择会话开始聊天。中间显示消息，左侧查看本轮模型上下文、工具与原始请求，右侧查看概括、记忆和后台整理状态。
 4. 开启新会话或停聊满15分钟，会把旧会话交给后台记忆整理。新会话先使用已经保存的资料，不等待整理完成。
 5. 查看输入框下方的上下文、累计 token 和预估费用；悬浮或点击可看详情。
+6. 首次进入展示简短开场，可跳过；右上角播放按钮可重播。系统开启“减少动态效果”时自动跳过开场。字体和角色图片均从本地加载。
 
 部分 SOUL 可声明 `audience.minimumAge`，前后端根据用户填写的年龄限制访问。这是实验用年龄字段检查，不是实名认证。
 

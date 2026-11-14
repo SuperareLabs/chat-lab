@@ -3,17 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#eff2ee">
+  <meta name="theme-color" content="#f3f1eb">
   <title>全Agent轻量聊天实验台</title>
   <link rel="icon" href="/assets/benny.png" type="image/png">
+  <link rel="preload" href="/assets/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/agent-gallery.css">
+  <link rel="stylesheet" href="/motion-ui.css">
+  <script type="module" src="/motion-ui.js"></script>
   <script type="module" src="/app.js"></script>
 </head>
 <body>
-  <div class="workspace">
+  <div class="workspace" id="workspace">
     <header class="workspace-header">
-      <h1>全Agent轻量聊天实验台</h1>
+      <div class="brand-row">
+        <div class="brand-lockup">
+          <span class="brand-mark" aria-hidden="true">
+            <svg width="34" height="34" viewBox="0 0 40 40" fill="none"><path d="M8 7h16a6 6 0 0 1 6 6v8a6 6 0 0 1-6 6H14l-7 6V13a6 6 0 0 1 1-6Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M16 14h13a5 5 0 0 1 5 5v13l-6-5h-7a5 5 0 0 1-5-5v-8Z" fill="currentColor"/><circle cx="25" cy="20" r="2" fill="#e9eddf"/></svg>
+          </span>
+          <div class="brand-copy"><p class="brand-wordmark">Chat Lab<span>.</span></p><h1>全Agent轻量聊天实验台</h1></div>
+        </div>
+        <div class="brand-aside"><p>让每种性格，都有自己的回响。</p><button id="intro-replay" class="intro-replay" type="button" aria-label="重播开场动画"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m7 4 9 6-9 6V4Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><span>观看开场</span></button></div>
+      </div>
       <div class="toolbar" aria-label="聊天选择">
         <div class="toolbar-agent">
           <span class="control-label">Agent</span>
@@ -38,7 +49,7 @@
             <label class="control-label" for="session-select">会话</label>
             <select id="session-select" class="select-control" disabled><option>选择会话</option></select>
           </div>
-          <button id="new-session" class="toolbar-action" type="button" disabled>
+          <button id="new-session" class="toolbar-action" type="button" aria-label="开启新会话" title="开启新会话" disabled>
             <img src="/assets/icons/plus-lg.svg" alt=""><span>新会话</span>
           </button>
         </div>
@@ -51,7 +62,7 @@
       <aside id="context-panel" class="panel inspector context-panel" aria-labelledby="context-heading" tabindex="-1">
         <header class="panel-header inspector-header">
           <span class="panel-icon"><img src="/assets/icons/card-text.svg" alt=""></span>
-          <h2 id="context-heading">模型上下文</h2>
+          <div class="panel-heading-copy"><p class="panel-eyebrow">CONTEXT</p><h2 id="context-heading">模型上下文</h2></div><span class="panel-heading-dot" aria-hidden="true"></span>
         </header>
         <div id="context-content" class="inspector-content">
           <p class="panel-empty">发出一条消息后，可在这里查看实际送给模型的内容。</p>
@@ -74,6 +85,7 @@
         </header>
 
         <div class="conversation">
+          <div class="conversation-watermark" aria-hidden="true"><span></span><span></span><span></span></div>
           <div id="messages" class="messages" role="log" aria-label="聊天消息" aria-live="off" tabindex="0"></div>
           <div id="chat-empty" class="chat-empty">
             <img src="/assets/benny.png" alt="" class="empty-avatar">
@@ -100,7 +112,7 @@
       <aside id="memory-panel" class="panel inspector memory-panel" aria-labelledby="memory-heading" tabindex="-1">
         <header class="panel-header inspector-header">
           <span class="panel-icon"><img src="/assets/icons/archive.svg" alt=""></span>
-          <h2 id="memory-heading">记忆</h2>
+          <div class="panel-heading-copy"><p class="panel-eyebrow">MEMORY</p><h2 id="memory-heading">记忆</h2></div><span class="panel-heading-dot" aria-hidden="true"></span>
         </header>
         <div id="memory-content" class="inspector-content">
           <p class="panel-empty">选择用户和 Agent 后，可查看这组对话积累的记忆。</p>
