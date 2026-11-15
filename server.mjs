@@ -8,6 +8,8 @@ import { isIPv4 } from 'node:net';
 import { readConfig } from './lib/config.mjs';
 import { ChatStore, problem } from './lib/store.mjs';
 import { ChatRuntime } from './lib/runtime.mjs';
+import { createAccessGate } from './lib/access-gate.mjs';
+import { createBrowserWorkspace, BROWSER_WORKSPACE_MAX_BYTES } from './lib/browser-workspace.mjs';
 
 const PUBLIC = fileURLToPath(new URL('./public/', import.meta.url));
 const APP_VERSION = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
@@ -22,20 +24,21 @@ const TYPES = {
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
+  'X-Frame-Options': 'DENY',
 };
 
-function sendJson(response, status, value) {
-  response.writeHead(status, { ...SECURITY_HEADERS, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+function sendJson(response, status, value, headers = {}) {
+  response.writeHead(status, { ...SECURITY_HEADERS, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
   response.end(JSON.stringify(value));
 }
 
-async function jsonBody(request) {
+async function jsonBody(request, maxBytes = 64_000) {
   if (!/^application\/json\b/i.test(request.headers['content-type'] || '')) throw problem('请发送 JSON 请求', 415);
   let bytes = 0;
   const chunks = [];
   for await (const chunk of request) {
     bytes += chunk.length;
-    if (bytes > 64_000) throw problem('请求内容太长', 413);
+    if (bytes > maxBytes) throw problem('请求内容太长', 413);
     chunks.push(chunk);
   }
   try {
@@ -87,18 +90,28 @@ function isPrivateAddress(address) {
   return first === 10 || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168);
 }
 
-function validateOrigin(request, isApi, allowLan) {
+function validateOrigin(request, isApi, allowLan, publicOrigins = []) {
   const host = request.headers.host || '';
+  if (!host || /[\s\/@\\?#]/.test(host)) throw problem('请求地址无效', 403);
+  const candidates = publicOrigins.filter(value => {
+    try {
+      const expected = new URL(value);
+      const actual = new URL(expected.protocol + '//' + host);
+      return actual.host.toLowerCase() === expected.host.toLowerCase() && actual.pathname === '/';
+    } catch { return false; }
+  });
+  const configured = candidates.find(value => value === request.headers.origin) || candidates[0];
   const match = /^(localhost|\d{1,3}(?:\.\d{1,3}){3})(?::(\d{1,5}))?$/i.exec(host);
   const hostname = match?.[1].toLowerCase();
   const localAddress = request.socket.localAddress;
   const port = match?.[2] ? Number(match[2]) : 80;
   const allowed = hostname === 'localhost' || hostname === '127.0.0.1' ||
     (allowLan && isPrivateAddress(hostname || '') && hostname === localAddress);
-  if (!allowed || port !== request.socket.localPort) throw problem('实验台只接受本机或当前局域网地址的请求', 403);
-  const origin = new URL(`http://${host}`).origin;
+  if (!configured && (!allowed || port !== request.socket.localPort)) throw problem('请求地址不在本站允许的地址中', 403);
+  const origin = configured || new URL(`http://${host}`).origin;
   if (isApi && request.headers.origin && request.headers.origin !== origin) throw problem('不接受来自其他网页的请求', 403);
   if (isApi && request.headers['sec-fetch-site'] === 'cross-site') throw problem('不接受跨站请求', 403);
+  return origin;
 }
 
 async function serveStatic(response, method, pathname) {
@@ -126,18 +139,85 @@ export function createLabServer(options = {}) {
   const config = options.provider
     ? {
       dbPath: options.dbPath ?? ':memory:', timezone: 'Asia/Shanghai', port: 4333, host: '127.0.0.1',
+      storageMode: 'server', publicOrigins: [],
       model: { name: '测试模型', configured: true, searchConfigured: !!options.search?.configured, mode: 'test' },
       ...options,
     }
     : { ...readConfig(options.env), ...options };
-  const store = new ChatStore(config.dbPath);
-  const runtime = new ChatRuntime({ appVersion: APP_VERSION, ...config, store });
+  const browserMode = config.storageMode === 'browser';
+  // Public mode never opens the legacy SQLite file, even if CHAT_DB_PATH is set.
+  const store = browserMode ? null : new ChatStore(config.dbPath);
+  const runtime = browserMode ? null : new ChatRuntime({ appVersion: APP_VERSION, ...config, store });
+  const gate = browserMode ? createAccessGate({ password: config.accessPassword }) : null;
+  const browserWorkspace = browserMode ? createBrowserWorkspace({ ...config, appVersion: APP_VERSION,
+    defaultAgents: config.defaultAgents ?? JSON.parse(readFileSync(new URL('./config/default-agents.json', import.meta.url), 'utf8')).agents,
+    defaultChildren: config.defaultChildren ?? [{ name: '访客', age: null, interests: [] }],
+  }) : null;
+  const activeWorkspaces = new Set();
+  const workspaceControllers = new Set();
+  let accepting = true;
   const handler = async (request, response) => {
     const { pathname, searchParams } = new URL(request.url, 'http://localhost');
-    validateOrigin(request, pathname.startsWith('/api/'), config.host === '0.0.0.0');
+    const origin = validateOrigin(request, pathname.startsWith('/api/'), config.host === '0.0.0.0', config.publicOrigins);
     const method = request.method;
+    const secure = origin.startsWith('https:');
+    if (method === 'GET' && pathname === '/api/auth/session') {
+      return sendJson(response, 200, gate ? gate.status(request)
+        : { authenticated: true, passwordRequired: false, storageMode: 'server' });
+    }
+    if (browserMode && pathname === '/api/auth/login' && method === 'POST') {
+      const login = await gate.login(request, await jsonBody(request), { secure });
+      return sendJson(response, 200, login.value, { 'Set-Cookie': login.cookie });
+    }
+    if (browserMode && pathname === '/api/auth/logout' && method === 'POST') {
+      const logout = gate.logout(request, { secure });
+      return sendJson(response, 200, logout.value, { 'Set-Cookie': logout.cookie });
+    }
+    if (browserMode && pathname.startsWith('/api/')) {
+      gate.require(request);
+      // Do not expose old server-owned users, records or CRUD routes in public mode.
+      if (pathname !== '/api/local' || method !== 'POST') throw problem('找不到此地址', 404);
+      if (!accepting || activeWorkspaces.size >= 4) throw problem('当前服务较忙，请稍后再试', 503);
+      const controller = new AbortController();
+      workspaceControllers.add(controller);
+      response.once('close', () => controller.abort());
+      let finish;
+      const activity = new Promise(resolveActivity => { finish = resolveActivity; });
+      activeWorkspaces.add(activity);
+      try {
+        const envelope = await jsonBody(request, BROWSER_WORKSPACE_MAX_BYTES + 128 * 1024);
+        const chat = envelope.method === 'POST' && envelope.path === '/api/chat';
+        let streaming = false;
+        const emit = chat ? event => {
+          if (response.destroyed || response.writableEnded) return;
+          if (!streaming) {
+            streaming = true;
+            response.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': 'text/event-stream; charset=utf-8',
+              'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' });
+            response.flushHeaders();
+          }
+          response.write('data: ' + JSON.stringify(event) + '\n\n');
+        } : undefined;
+        try {
+          const result = await browserWorkspace.execute(envelope, { emit, signal: controller.signal });
+          if (!response.destroyed && !response.writableEnded) {
+            if (streaming) response.end();
+            else sendJson(response, result.status, result);
+          }
+        } catch (error) {
+          if (!streaming) throw error;
+          emit({ type: 'error', error: error.status ? error.message : '这次请求未能完成，请检查已保存的消息后再试' });
+          if (!response.destroyed && !response.writableEnded) response.end();
+        }
+      } finally {
+        activeWorkspaces.delete(activity);
+        workspaceControllers.delete(controller);
+        finish();
+      }
+      return;
+    }
     const childId = searchParams.get('childId');
-    const agentId = runtime.agentId(searchParams.get('agentId'));
+    const agentId = runtime?.agentId(searchParams.get('agentId'));
 
     if (method === 'GET' && pathname === '/api/state') {
       return sendJson(response, 200, runtime.state());
@@ -257,28 +337,32 @@ export function createLabServer(options = {}) {
   });
 
   return {
-    server, runtime, store,
+    server, runtime, store, storageMode: config.storageMode, model: config.model,
     async listen(port = config.port) {
       await new Promise((resolveListen, reject) => {
         server.once('error', reject);
         server.listen(port, config.host, () => {
           server.removeListener('error', reject);
           try {
-            runtime.initialize();
+            runtime?.initialize();
             resolveListen();
           } catch (error) {
             server.close(() => reject(error));
           }
         });
       });
-      runtime.tick();
+      runtime?.tick();
       return server.address();
     },
     async close({ drain = false } = {}) {
+      accepting = false;
       const closed = new Promise(resolveClose => server.close(resolveClose));
-      await runtime.stop({ drain });
+      if (!drain) for (const controller of workspaceControllers) controller.abort();
+      await Promise.allSettled([...activeWorkspaces]);
+      await runtime?.stop({ drain });
       await closed;
-      store.close();
+      store?.close();
+      gate?.close();
     },
   };
 }
@@ -287,7 +371,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   try {
     const lab = createLabServer();
     const { port } = await lab.listen();
-    const state = lab.runtime.state();
+    const state = lab.runtime ? lab.runtime.state() : { model: lab.model };
     process.stdout.write(`全Agent轻量聊天实验台 http://127.0.0.1:${port}（${state.model.configured ? state.model.name : '模型未配置'}）\n`);
     if (lab.server.address().address === '0.0.0.0') {
       const addresses = new Set(Object.values(networkInterfaces()).flat()

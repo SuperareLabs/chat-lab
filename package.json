@@ -1,14 +1,14 @@
 {
   "name": "all-agent-lightweight-chat-lab",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
-    "start": "node --env-file-if-exists=config/runtime.env server.mjs",
-    "dev": "node --env-file-if-exists=config/runtime.env server.mjs",
+    "start": "node --env-file-if-exists=config/runtime.env --env-file-if-exists=.env server.mjs",
+    "dev": "node --env-file-if-exists=config/runtime.env --env-file-if-exists=.env server.mjs",
     "test": "node --test"
   }
 }

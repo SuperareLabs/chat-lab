@@ -1,4 +1,5 @@
 import { installAgentGallery } from './agent-gallery.js';
+import { LocalWorkspace } from './local-workspace.js';
 
 const el = id => document.getElementById(id);
 const ui = Object.fromEntries([
@@ -7,20 +8,26 @@ const ui = Object.fromEntries([
   'chat-form', 'chat-input', 'send-button', 'model-status', 'chat-status', 'composer-hint', 'session-usage',
   'context-content', 'memory-content', 'child-dialog', 'child-form', 'child-name', 'child-age',
   'child-interests', 'child-error', 'child-cancel', 'app-error', 'context-toggle', 'memory-toggle',
-  'context-panel', 'memory-panel', 'new-agent',
+  'context-panel', 'memory-panel', 'new-agent', 'clear-memory', 'guide-open', 'logout',
 ].map(id => [id, el(id)]));
 
 const state = {
   agents: [], children: [], sessions: [], model: {}, agentId: '', childId: '', sessionId: '',
   dataVersion: '',
   scopeVersion: 0, sessionVersion: 0, sending: false, busy: false, conversation: null,
-  editorSaving: false,
+  editorSaving: false, queueSaving: false, authenticated: false,
   pendingMessages: [], pendingTimer: null,
   memorySignature: null, memoryOpen: new Set(), memoryDetails: new Map(), memoryData: null, memoryFilter: 'active', polling: false,
   sessionUsage: null, liveToolCalls: null,
 };
 const selectionKey = 'croco-lab-v1.selection';
+let workspaceClient = null;
+let localSelection = {};
+let bootstrapSerial = 0;
+let pendingEntry = null;
+let entryRecoveryTimer;
 const avatars = new Map([['9a15fadb-1fa5-437d-aeee-6f2a3e1e8d65', '/assets/benny.png']]);
+const defaultPortraits = new Map([['2faddbf5-f25c-4972-9cb2-e57ee021ac12', '/assets/zhou-yu-portrait.png']]);
 const fallbackAvatar = '/assets/icons/person-circle.svg';
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const sendPauseMs = 750;
@@ -54,11 +61,13 @@ function show(id, text) {
 }
 
 async function api(path, body, method = 'POST') {
+  if (typeof workspaceClient !== 'undefined' && workspaceClient) return workspaceClient.api(path, body, body === undefined ? 'GET' : method);
   const response = await fetch(path, body === undefined ? { cache: 'no-store' } : {
     method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
   const data = await response.json().catch(() => null);
   if (!response.ok || !data) {
+    if (response.status === 401 && typeof showEntrance === 'function') showEntrance();
     const error = new Error(data?.error || `请求失败 (${response.status})`);
     error.status = response.status;
     throw error;
@@ -198,14 +207,20 @@ function audienceBlocked() {
   return Boolean(minimumAge && (!Number.isInteger(child()?.age) || child().age < minimumAge));
 }
 function imageForAgent(selected = agent()) {
-  return selected ? selected.avatar || avatars.get(selected.id) || selected.card?.portrait || fallbackAvatar : '';
+  return selected ? selected.avatar || avatars.get(selected.id) || selected.card?.portrait || defaultPortraits.get(selected.id) || fallbackAvatar : '';
 }
 
 function savedSelection() {
+  if (workspaceClient) return localSelection;
   try { return JSON.parse(localStorage.getItem(selectionKey)) || {}; } catch { return {}; }
 }
 
 function saveSelection() {
+  if (workspaceClient) {
+    localSelection = { ...selectedScope(), sessionId: state.sessionId };
+    void workspaceClient.saveSelection(localSelection).catch(error => show('app-error', error.message));
+    return;
+  }
   try { localStorage.setItem(selectionKey, JSON.stringify({ ...selectedScope(), sessionId: state.sessionId })); }
   catch { /* The current selection works without browser storage. */ }
 }
@@ -269,7 +284,7 @@ function renderSelectors() {
 }
 
 function updateControls() {
-  const locked = state.sending || state.busy || state.editorSaving;
+  const locked = state.sending || state.busy || state.editorSaving || state.queueSaving;
   const scopeLocked = locked || state.pendingMessages.length > 0;
   const closed = state.conversation?.session?.status === 'closed';
   const minimumAge = agent()?.minimumAge;
@@ -280,7 +295,8 @@ function updateControls() {
   ui['new-child'].disabled = scopeLocked;
   ui['new-agent'].disabled = scopeLocked;
   ui['new-session'].disabled = scopeLocked || !hasScope() || blocked;
-  ui['chat-input'].disabled = !hasScope() || closed || blocked;
+  if (ui['clear-memory']) ui['clear-memory'].disabled = scopeLocked || !hasScope();
+  ui['chat-input'].disabled = !hasScope() || closed || blocked || state.busy || state.queueSaving;
   ui['chat-input'].placeholder = !state.agentId ? '先创建或选择角色' : !state.childId ? '先选择或创建用户' : blocked ? `此角色仅限${minimumAge}岁及以上，请切换或创建成年用户` : closed ? '此会话已结束，可开启新会话' : `给${agent()?.name || 'Agent'}发消息…`;
   ui['send-button'].disabled = locked || !hasScope() || closed || blocked || !ui['chat-input'].value.trim();
   syncAgentGalleryRoute();
@@ -1070,6 +1086,7 @@ async function openSession(id) {
 }
 
 async function changeScope(preferred = '') {
+  workspaceClient?.abortChat();
   ++state.scopeVersion;
   ++state.sessionVersion;
   state.sessionId = '';
@@ -1154,10 +1171,10 @@ async function readStream(response, onEvent) {
   } finally { await reader.cancel().catch(() => {}); }
 }
 
-function queueMessage() {
+async function queueMessage() {
   const input = ui['chat-input'];
   const text = input.value.trim();
-  if (!text || state.sending || state.busy || !hasScope() || audienceBlocked() || state.conversation?.session?.status === 'closed') return;
+  if (!text || state.sending || state.busy || state.queueSaving || !hasScope() || audienceBlocked() || state.conversation?.session?.status === 'closed') return;
   if (!state.model.configured && state.model.mode !== 'demo') {
     show('app-error', '聊天模型尚未配置，请先在本机服务设置凭据。');
     return;
@@ -1167,8 +1184,23 @@ function queueMessage() {
     show('app-error', '这轮消息已排满，等回复后再发送这一条。');
     return;
   }
+  const message = { text, createdAt: new Date().toISOString() };
+  if (workspaceClient) {
+    state.queueSaving = true;
+    updateControls();
+    clearTimeout(state.pendingTimer);
+    try {
+      await workspaceClient.saveOutbox({ body: { ...selectedScope(), sessionId: state.sessionId, messages: [...state.pendingMessages.map(item => item.message), message] }, assistant: '', startedAt: Date.now(), dispatched: false });
+      await workspaceClient.saveDraft(null);
+    } catch (error) {
+      show('app-error', `消息尚未发送：${error.message}`);
+      if (state.pendingMessages.length) state.pendingTimer = setTimeout(requestReply, sendPauseMs);
+      return;
+    } finally { state.queueSaving = false; updateControls(); }
+    if (!state.authenticated) return;
+  }
   const { row } = chatMessage('user', text, true);
-  state.pendingMessages.push({ message: { text, createdAt: new Date().toISOString() }, row });
+  state.pendingMessages.push({ message, row });
   if (ui['chat-empty']) ui['chat-empty'].hidden = true;
   ui.messages.append(row);
   scrollLatest(true);
@@ -1178,6 +1210,7 @@ function queueMessage() {
   clearTimeout(state.pendingTimer);
   state.pendingTimer = setTimeout(requestReply, sendPauseMs);
   updateControls();
+  input.focus();
 }
 
 async function requestReply() {
@@ -1205,15 +1238,12 @@ async function requestReply() {
   const receivedPartTexts = [];
   try {
     const requestId = newRequestId();
-    const response = await fetch('/api/chat', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...selectedScope(), sessionId: id, requestId, messages: batch.map(({ message }) => message),
-      }),
-    });
+    const body = { ...selectedScope(), sessionId: id, requestId, messages: batch.map(({ message }) => message) };
+    const scopeVersion = state.scopeVersion;
     let done = false;
     let text = '';
-    await readStream(response, event => {
+    const onEvent = event => {
+      if (scopeVersion !== state.scopeVersion || !state.authenticated) return;
       if (event.type === 'start' && event.sessionId && event.sessionId !== id) {
         renderUsage(null);
         renderChat();
@@ -1242,7 +1272,13 @@ async function requestReply() {
       }
       if (event.type === 'done') { done = true; streamEnded = true; }
       if (event.type === 'error') throw new Error(event.message || '本轮回复失败');
-    });
+    };
+    if (workspaceClient) await workspaceClient.chat(body, onEvent);
+    else {
+      const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      await readStream(response, onEvent);
+    }
+    if (scopeVersion !== state.scopeVersion || !state.authenticated) return;
     if (!done) throw new Error('回复连接中断，请查看会话记录。');
     await presentation;
     if (presentationError) throw presentationError;
@@ -1259,7 +1295,9 @@ async function requestReply() {
     streamEnded = true;
     await presentation;
     removeTyping(reply.stack);
-    show('app-error', error.message);
+    if (!state.authenticated) return;
+    show('app-error', error.name === 'AbortError' ? '回复已中止，消息草稿与已收到的内容已保留在本机。' : error.message);
+    if (workspaceClient) void offerRecovery();
     if (!receivedParts.size) reply.row.remove();
     if (!began) {
       for (const { row } of batch) row.remove();
@@ -1288,7 +1326,7 @@ async function requestReply() {
     put('chat-status', '');
     fitComposer();
     updateControls();
-    if (!ui['child-dialog'].open) input.focus();
+    if (state.authenticated && !ui['child-dialog'].open) input.focus();
   }
 }
 
@@ -1336,7 +1374,10 @@ function installListeners() {
     finally { submit.disabled = false; }
   });
   ui['chat-form'].addEventListener('submit', event => { event.preventDefault(); queueMessage(); });
-  ui['chat-input'].addEventListener('input', () => { fitComposer(); updateControls(); });
+  ui['chat-input'].addEventListener('input', () => {
+    fitComposer(); updateControls();
+    if (workspaceClient) void workspaceClient.saveDraft({ ...selectedScope(), sessionId: state.sessionId, text: ui['chat-input'].value }).catch(error => show('app-error', error.message));
+  });
   ui['chat-input'].addEventListener('keydown', event => {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
       event.preventDefault();
@@ -1390,7 +1431,8 @@ const syncAgentGalleryRoute = installAgentGallery({
   getAgents: () => state.agents,
   getSelectedId: () => state.agentId,
   getDataVersion: () => state.dataVersion,
-  avatarFor: selected => selected.avatar || avatars.get(selected.id) || fallbackAvatar,
+  requestJSON: path => api(path),
+  avatarFor: selected => selected.avatar || avatars.get(selected.id) || defaultPortraits.get(selected.id) || fallbackAvatar,
   onCreate: () => agentEditor.open(),
   onEdit: id => agentEditor.open(id),
   onSelect: id => runAction(async () => {
@@ -1400,10 +1442,10 @@ const syncAgentGalleryRoute = installAgentGallery({
   }),
 });
 installListeners();
-void runAction(async () => loadState(await api('/api/state')));
+void initializeEntrance();
 
 setInterval(async () => {
-  if (document.hidden || !hasScope() || state.polling || state.busy || state.editorSaving || state.sending || state.pendingMessages.length) return;
+  if (workspaceClient || !state.authenticated || document.hidden || !hasScope() || state.polling || state.busy || state.editorSaving || state.sending || state.pendingMessages.length) return;
   state.polling = true;
   try {
     const data = await api('/api/state');
@@ -1423,3 +1465,329 @@ setInterval(async () => {
   } catch { /* An active action shows its own network errors. */ }
   finally { state.polling = false; }
 }, 2600);
+
+function showEntrance(message = '') {
+  ++bootstrapSerial;
+  pendingEntry = null;
+  clearTimeout(entryRecoveryTimer);
+  state.authenticated = false;
+  ++state.scopeVersion;
+  workspaceClient?.stop();
+  clearTimeout(state.pendingTimer);
+  state.pendingTimer = null;
+  state.pendingMessages = [];
+  for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
+  document.body.classList.add('entrance-active');
+  el('workspace').hidden = true;
+  el('entrance').hidden = false;
+  el('entrance-password').disabled = false;
+  el('entrance-submit').disabled = false;
+  el('entrance-submit').textContent = '进入实验台';
+  el('entrance-error').textContent = message;
+  el('entrance-error').hidden = !message;
+  el('entrance-password').focus();
+}
+
+async function authRequest(path, body) {
+  const response = await fetch(path, body === undefined ? { cache: 'no-store' } : {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload) throw new Error(payload?.error || `连接失败 (${response.status})`);
+  return payload;
+}
+
+async function enterWorkspace(session) {
+  const serial = ++bootstrapSerial;
+  workspaceClient?.stop();
+  if (session.storageMode === 'browser') {
+    workspaceClient = new LocalWorkspace({
+      getScope: () => ({ ...selectedScope(), sessionId: state.sessionId }),
+      onUnauthorized: () => showEntrance('进入凭证已过期，请重新输入口令。本机记录仍保留。'),
+      onChange: () => void refreshLocalView(),
+      onError: error => { if (state.authenticated) { show('app-error', error.message); void offerRecovery(); } },
+    });
+    await workspaceClient.initialize();
+    localSelection = (await workspaceClient.metadata()).selection || {};
+  } else { workspaceClient = null; }
+  state.authenticated = true;
+  state.busy = true;
+  if (workspaceClient) {
+    const entry = await workspaceClient.entryState();
+    if (entry.operation) { await showEntryRecovery(serial, entry); return; }
+  }
+  await completeWorkspaceEntry(serial);
+}
+
+async function completeWorkspaceEntry(serial) {
+  try {
+    // Refresh untouched public defaults once on entry. Ordinary GETs still use
+    // local views; private role edits and all existing conversations are kept.
+    const initial = workspaceClient
+      ? await workspaceClient.api('/api/state', undefined, 'GET', { force: true })
+      : await api('/api/state');
+    await loadState(initial);
+    if (serial !== bootstrapSerial || !state.authenticated) return;
+    el('entrance-password').value = '';
+    el('entrance').hidden = true;
+    el('workspace').hidden = false;
+    document.body.classList.remove('entrance-active');
+    if (workspaceClient) {
+      const draft = (await workspaceClient.metadata()).draft;
+      if (draft?.text && draft.childId === state.childId && draft.agentId === state.agentId) { ui['chat-input'].value = draft.text; fitComposer(); }
+    }
+    await workspaceClient?.resumeDeadlines();
+    const recovered = await offerRecovery();
+    if (!recovered && workspaceClient && !(await workspaceClient.metadata()).guideSeen) openGuide();
+  } catch (error) {
+    if (error.needsRecovery && workspaceClient) {
+      await showEntryRecovery(serial, await workspaceClient.entryState());
+      return;
+    }
+    throw error;
+  } finally { if (!pendingEntry) state.busy = false; updateControls(); }
+}
+
+async function showEntryRecovery(serial, entry) {
+  if (serial !== bootstrapSerial || !state.authenticated) return;
+  pendingEntry = { serial };
+  state.busy = true;
+  document.body.classList.remove('entrance-active');
+  el('entrance').hidden = true;
+  el('workspace').hidden = false;
+  await renderEntryRecovery(entry);
+  if (!el('recovery-dialog').open) el('recovery-dialog').showModal();
+  scheduleEntryRecoveryCheck();
+}
+
+async function renderEntryRecovery(entry) {
+  recoveryData = { ...entry, phase: 'entry' };
+  const waiting = entry.operation && entry.activeUntil > Date.now();
+  el('recovery-title').textContent = waiting ? '另一个标签页正在处理' : '先恢复未完成的本地操作';
+  el('recovery-copy').textContent = waiting
+    ? '进入口令已验证。原标签页仍持有本地数据锁，请等待它完成，或回到原标签页查看。这里会自动检查保存状态。'
+    : '进入口令已验证，但上次操作尚未完成本地保存。已有草稿会继续保留；确认后可重新载入工作区，不会自动重发聊天。';
+  el('recovery-messages').textContent = entry.outbox?.body?.messages?.map(item => item.text).join('\n\n') || '已有记录会保留。首次进入尚未完成时，将重新建立本地工作区。';
+  el('recovery-assistant').textContent = entry.outbox?.assistant || '';
+  el('recovery-assistant-section').hidden = !entry.outbox?.assistant;
+  el('recovery-restore').textContent = waiting ? '检查处理状态' : '保留草稿并继续';
+  el('recovery-close').textContent = '退出体验';
+  el('recovery-error').hidden = true;
+  updateControls();
+}
+
+function scheduleEntryRecoveryCheck() {
+  clearTimeout(entryRecoveryTimer);
+  if (!pendingEntry || !state.authenticated) return;
+  entryRecoveryTimer = setTimeout(async () => {
+    try {
+      const entry = await workspaceClient.entryState();
+      if (!pendingEntry) return;
+      if (!entry.operation) await resumeEntryRecovery(false);
+      else if (entry.activeUntil > Date.now()) scheduleEntryRecoveryCheck();
+      else await renderEntryRecovery(entry);
+    } catch (error) { el('recovery-error').textContent = error.message; el('recovery-error').hidden = false; }
+  }, 1000);
+}
+
+async function resumeEntryRecovery(acknowledge = true) {
+  if (!pendingEntry || !workspaceClient) return;
+  const entry = await workspaceClient.entryState();
+  if (entry.operation) {
+    if (entry.activeUntil > Date.now()) { await renderEntryRecovery(entry); scheduleEntryRecoveryCheck(); return; }
+    if (!acknowledge) { await renderEntryRecovery(entry); return; }
+    await workspaceClient.acknowledgeRecovery();
+  }
+  const { serial } = pendingEntry;
+  pendingEntry = null;
+  clearTimeout(entryRecoveryTimer);
+  el('recovery-dialog').close();
+  await completeWorkspaceEntry(serial);
+}
+
+let refreshingLocal = false;
+let refreshLocalTimer;
+async function refreshLocalView() {
+  if (!state.authenticated || !workspaceClient || refreshingLocal || pendingEntry) return;
+  if (state.sending || state.busy || state.editorSaving || state.pendingMessages.length || state.queueSaving) {
+    clearTimeout(refreshLocalTimer);
+    refreshLocalTimer = setTimeout(() => void refreshLocalView(), 500);
+    return;
+  }
+  refreshingLocal = true;
+  const draft = { ...selectedScope(), text: ui['chat-input'].value };
+  try {
+    await runAction(async () => loadState(await api('/api/state')));
+    if (draft.childId === state.childId && draft.agentId === state.agentId && draft.text) {
+      ui['chat-input'].value = draft.text; fitComposer(); updateControls();
+    }
+  }
+  finally { refreshingLocal = false; }
+}
+
+const guideSteps = [
+  { title: '先选一个想聊的角色', target: 'agent-select', copy: '点左上角的 Agent 打开角色图鉴。八位角色都能选择；在「角色概览」了解设定，在「提示词原文」查看实际使用的提示词。', note: '可以随时换角色，每位角色分别保存与你的记忆。' },
+  { title: '也可以创造自己的角色', target: 'new-agent', copy: '点击「创建角色」，只需填写名称和角色设定。设定里可以写身份、性格、说话方式，以及你希望它怎样陪你聊天。', note: '新建或编辑角色只影响当前浏览器，不会改动其他访客的角色。' },
+  { title: '让角色认识你', target: 'new-child', copy: '右上角可以创建用户资料，填写名字、年龄与兴趣。接着就能聊天；点「新会话」开启下一段，旧会话记录仍可查看。', note: '默认使用匿名访客。年龄可留空；需要成年年龄的角色会提示补充资料。停聊约 15 分钟后，会在下次打开或页面仍开着时整理记忆。' },
+  { title: '记忆留在你的浏览器', target: 'memory-panel', copy: '右侧可以查看记忆和用户概括。「清空记忆」只清理当前用户与角色的记忆，聊天记录会保留。左侧显示每轮实际送给模型的内容。', note: '共享口令不是账户。换设备、换浏览器不会同步；清理网站数据会丢失记录。请求处理时会临时发送工作区资料给服务端，不写入服务器用户数据库。请自行保留重要信息。' },
+];
+let guideIndex = 0;
+function renderGuide() {
+  for (const item of document.querySelectorAll('.guide-highlight')) item.classList.remove('guide-highlight');
+  const step = guideSteps[guideIndex];
+  el('guide-title').textContent = step.title;
+  el('guide-copy').textContent = step.copy;
+  el('guide-note').textContent = step.note;
+  el('guide-progress').textContent = `${guideIndex + 1} / ${guideSteps.length}`;
+  el('guide-back').disabled = guideIndex === 0;
+  el('guide-next').textContent = guideIndex === guideSteps.length - 1 ? '开始聊天' : '下一步';
+  el(step.target)?.classList.add('guide-highlight');
+}
+function openGuide() {
+  guideIndex = 0;
+  renderGuide();
+  if (!el('guide-dialog').open) el('guide-dialog').showModal();
+}
+async function finishGuide() {
+  try { await workspaceClient?.saveGuide(); }
+  catch (error) { show('app-error', error.message); }
+  el('guide-dialog').close();
+}
+ui['guide-open'].addEventListener('click', openGuide);
+el('guide-back').addEventListener('click', () => { if (guideIndex > 0) { --guideIndex; renderGuide(); } });
+el('guide-next').addEventListener('click', () => { if (guideIndex < guideSteps.length - 1) { ++guideIndex; renderGuide(); } else void finishGuide(); });
+el('guide-skip').addEventListener('click', () => void finishGuide());
+el('guide-dialog').addEventListener('cancel', event => { event.preventDefault(); void finishGuide(); });
+el('guide-dialog').addEventListener('close', () => {
+  for (const item of document.querySelectorAll('.guide-highlight')) item.classList.remove('guide-highlight');
+});
+
+ui['clear-memory'].addEventListener('click', () => {
+  if (!hasScope() || state.sending || state.busy) return;
+  el('clear-memory-scope').textContent = `${child()?.name || '当前用户'} × ${agent()?.name || '当前角色'}`;
+  el('clear-memory-error').hidden = true;
+  el('clear-memory-dialog').showModal();
+  el('clear-memory-cancel').focus();
+});
+el('clear-memory-cancel').addEventListener('click', () => el('clear-memory-dialog').close());
+el('clear-memory-confirm').addEventListener('click', async () => {
+  const button = el('clear-memory-confirm');
+  if (button.disabled) return;
+  button.disabled = true;
+  el('clear-memory-cancel').disabled = true;
+  button.textContent = '正在清空…';
+  await runAction(async () => {
+    try {
+      await api('/api/memory/clear', selectedScope());
+      state.memoryDetails.clear();
+      state.memoryOpen.clear();
+      state.memorySignature = null;
+      await createSession();
+      el('clear-memory-dialog').close();
+      put('chat-status', '这组记忆已清空，聊天记录已保留。');
+    } catch (error) {
+      el('clear-memory-error').textContent = error.message;
+      el('clear-memory-error').hidden = false;
+    }
+  });
+  button.disabled = false;
+  el('clear-memory-cancel').disabled = false;
+  button.textContent = '确认清空';
+});
+el('clear-memory-dialog').addEventListener('cancel', event => { if (el('clear-memory-confirm').disabled) event.preventDefault(); });
+
+let recoveryData;
+async function offerRecovery() {
+  if (!workspaceClient || !state.authenticated || pendingEntry) return false;
+  const recovery = await workspaceClient.recovery();
+  if (!recovery.outbox && !recovery.operation) return false;
+  recoveryData = recovery;
+  el('recovery-title').textContent = '上次的消息已留在本机';
+  el('recovery-close').textContent = '稍后处理';
+  el('recovery-messages').textContent = recovery.outbox?.body?.messages?.map(item => item.text).join('\n\n') || '上次的本地操作未完成保存。已有聊天记录仍保留。';
+  el('recovery-assistant').textContent = recovery.outbox?.assistant || '';
+  el('recovery-assistant-section').hidden = !recovery.outbox?.assistant;
+  el('recovery-copy').textContent = recovery.outbox?.dispatched
+    ? '上次回复未完成本地保存。这里保留了你的消息与已收到的文本，不会自动重发。再次发送可能产生新的模型用量。'
+    : '消息尚未完成发送，已在当前浏览器保留。恢复为草稿后，可以继续编辑再发送。';
+  el('recovery-restore').textContent = recovery.outbox ? '恢复为草稿' : '继续使用';
+  el('recovery-error').hidden = true;
+  if (!el('recovery-dialog').open) el('recovery-dialog').showModal();
+  return true;
+}
+el('recovery-close').addEventListener('click', () => {
+  if (pendingEntry) ui.logout.click(); else el('recovery-dialog').close();
+});
+el('recovery-dialog').addEventListener('cancel', event => { if (pendingEntry) event.preventDefault(); });
+el('recovery-restore').addEventListener('click', async () => {
+  const button = el('recovery-restore');
+  button.disabled = true;
+  try {
+    if (pendingEntry) { await resumeEntryRecovery(); return; }
+    if (recoveryData?.operation) await workspaceClient.acknowledgeRecovery();
+    const recovered = recoveryData?.outbox;
+    if (recovered?.body) {
+      const scope = recovered.body;
+      if (state.agents.some(item => item.id === scope.agentId) && state.children.some(item => item.id === scope.childId) &&
+          (state.agentId !== scope.agentId || state.childId !== scope.childId || state.sessionId !== scope.sessionId)) {
+        state.agentId = scope.agentId;
+        state.childId = scope.childId;
+        await runAction(() => changeScope(scope.sessionId));
+      }
+      const recoveredText = scope.messages.map(item => item.text).join('\n\n');
+      const currentText = ui['chat-input'].value;
+      ui['chat-input'].value = currentText.trim() === recoveredText.trim() ? currentText
+        : [recoveredText, currentText].filter(Boolean).join('\n\n');
+      await workspaceClient.saveDraft({ ...selectedScope(), sessionId: state.sessionId, text: ui['chat-input'].value });
+      await workspaceClient.saveOutbox(null, recoveryData.outboxOwner);
+      fitComposer();
+      updateControls();
+    }
+    el('recovery-dialog').close();
+    ui['chat-input'].focus();
+  } catch (error) {
+    el('recovery-error').textContent = error.message;
+    el('recovery-error').hidden = false;
+  } finally { button.disabled = false; }
+});
+
+async function initializeEntrance() {
+  el('password-toggle').addEventListener('click', () => {
+    const input = el('entrance-password');
+    const visible = input.type === 'password';
+    input.type = visible ? 'text' : 'password';
+    el('password-toggle').textContent = visible ? '隐藏' : '显示';
+    el('password-toggle').setAttribute('aria-label', visible ? '隐藏口令' : '显示口令');
+    el('password-toggle').setAttribute('aria-pressed', String(visible));
+  });
+  el('entrance-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = el('entrance-submit');
+    if (button.disabled) return;
+    button.disabled = true;
+    button.textContent = '正在进入…';
+    el('entrance-error').hidden = true;
+    try { await enterWorkspace(await authRequest('/api/auth/login', { password: el('entrance-password').value })); }
+    catch (error) { showEntrance(error.message); }
+  });
+  ui.logout.addEventListener('click', async () => {
+    workspaceClient?.abortChat();
+    try { await authRequest('/api/auth/logout', {}); showEntrance(); }
+    catch (error) { show('app-error', error.message); }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && workspaceClient && state.authenticated) {
+      void workspaceClient.store.read('workspace').then(record => {
+        if (record?.nextDeadline <= Date.now() && Number.isFinite(record?.nextDeadline)) {
+          return workspaceClient.api('/api/state', undefined, 'GET', { force: true }).then(() => refreshLocalView());
+        }
+        return refreshLocalView();
+      }).catch(error => { show('app-error', error.message); void offerRecovery(); });
+    }
+  });
+  try {
+    const session = await authRequest('/api/auth/session');
+    if (session.authenticated) await enterWorkspace(session);
+    else showEntrance();
+  } catch (error) { showEntrance(error.message); }
+}

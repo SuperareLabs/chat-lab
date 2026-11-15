@@ -129,7 +129,7 @@ function parseGalleryRoute(hash) {
   return { agentId, view: match[2] ? 'prompt' : 'overview' };
 }
 
-export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarFor, onSelect, onCreate, onEdit, getDataVersion = () => '' }) {
+export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarFor, onSelect, onCreate, onEdit, getDataVersion = () => '', requestJSON }) {
   const dialog = document.getElementById('agent-gallery');
   const closeButton = document.getElementById('agent-gallery-close');
   const createButton = document.getElementById('agent-gallery-create');
@@ -229,11 +229,14 @@ export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarF
     const controller = new AbortController();
     loadController = controller;
     try {
-      const response = await fetch(`/api/agents/${encodeURIComponent(id)}/prompt`, {
-        cache: 'no-store', signal: controller.signal,
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error || `读取失败 (${response.status})`);
+      let payload;
+      const path = `/api/agents/${encodeURIComponent(id)}/prompt`;
+      if (requestJSON) payload = await requestJSON(path);
+      else {
+        const response = await fetch(path, { cache: 'no-store', signal: controller.signal });
+        payload = await response.json();
+        if (!response.ok) throw new Error(payload?.error || `读取失败 (${response.status})`);
+      }
       if (payload.agentId !== id || !['name', 'version', 'model', 'system', 'common', 'role'].every(key => typeof payload[key] === 'string')) {
         throw new Error('提示词数据格式不完整，请重试。');
       }

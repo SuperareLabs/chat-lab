@@ -1,12 +1,17 @@
+> 1.2.0默认公开体验采用浏览器持久化、请求内存运行；详见[浏览器本地架构](browser-local-demo.md)。下文SQLite表与ChatRuntime仍是内存快照的执行模型；其中服务器磁盘持久化仅适用于显式`CHAT_STORAGE_MODE=server`的旧私有模式。
+
 # 架构与执行流程
 
-本文件描述封版 `version1.1.2`：应用版本1.1.2、记忆框架6。角色可手动创建和编辑，仅填写名称与完整角色设定。整体仍是单进程、SQLite持久化的聊天实验台，包含聊天 Agent 与会话结束后的记忆整理 Agent，没有额外逐轮记忆判别模型。
+本文件描述封版 `version1.2.0`：应用版本1.2.0、记忆框架6。角色可手动创建和编辑，仅填写名称与完整角色设定。默认以浏览器IndexedDB持久化，用请求期间的内存SQLite执行原聊天与记忆逻辑；旧私有模式仍用磁盘SQLite。整体仍是单进程的聊天实验台，包含聊天 Agent 与会话结束后的记忆整理 Agent，没有额外逐轮记忆判别模型。
 
 ## 模块分工
 
 | 位置 | 职责 |
 | --- | --- |
 | [server.mjs](../server.mjs) | HTTP接口、静态页面、流式聊天和服务启动／关闭。 |
+| [lib/access-gate.mjs](../lib/access-gate.mjs) | 服务端共享口令校验、进入凭证与退出。 |
+| [lib/browser-workspace.mjs](../lib/browser-workspace.mjs) | 访客快照校验、临时内存执行、受控默认角色更新与结果导出。 |
+| [public/local-workspace.js](../public/local-workspace.js) | IndexedDB持久化、缓存、跨标签租约及中断恢复。 |
 | [lib/runtime.mjs](../lib/runtime.mjs) | 聊天模型循环、工具执行、会话超时、后台记忆任务及用量记录。 |
 | [lib/prompts.mjs](../lib/prompts.mjs) | 共用规则、SOUL加载、实际系统提示词及每轮资料组装。 |
 | [config/](../config/) | 无凭据运行配置，以及旧数据库首次导入使用的角色配置。 |
@@ -21,7 +26,7 @@
 
 ## 角色存储与提示词
 
-角色原文持久化在 SQLite 的 `agents` 表。人工输入只有 `name` 和 `definition`，以原文保存；隐藏的 `revision` 用于并发编辑校验。新建生成独立ID，编辑沿用原ID。头像、参考声音、受众限制等已有元数据原样保留，API不允许通过这两个字段的表单修改元数据。
+角色原文以 `agents` 表结构保存在浏览器快照；请求时导入临时SQLite。旧私有模式才持久化到服务器磁盘SQLite。人工输入只有 `name` 和 `definition`，以原文保存；隐藏的 `revision` 用于并发编辑校验。新建生成独立ID，编辑沿用原ID。头像、参考声音、受众限制等已有元数据原样保留，API不允许通过这两个字段的表单修改元数据。
 
 平台管理 `COMMON_PROMPT`，角色层采用：
 

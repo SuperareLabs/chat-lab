@@ -12,10 +12,36 @@
   <link rel="stylesheet" href="/motion-ui.css">
   <script type="module" src="/app.js"></script>
 </head>
-<body>
-  <div class="workspace" id="workspace">
+<body class="entrance-active">
+  <main id="entrance" class="entrance" aria-labelledby="entrance-title">
+    <section class="entrance-card">
+      <img src="/assets/benny.png" class="entrance-avatar" alt="">
+      <p class="entrance-eyebrow">AGENT CHAT LAB</p>
+      <h1 id="entrance-title">全Agent轻量聊天实验台</h1>
+      <p class="entrance-copy">找个角色，聊聊你的想法。</p>
+      <form id="entrance-form" class="entrance-form">
+        <label for="entrance-password">进入口令</label>
+        <div class="password-control">
+          <input id="entrance-password" name="password" type="password" autocomplete="current-password" required placeholder="输入体验口令" disabled>
+          <button id="password-toggle" type="button" aria-label="显示口令" aria-pressed="false">显示</button>
+        </div>
+        <p id="entrance-error" class="field-error" role="alert" hidden></p>
+        <button id="entrance-submit" class="primary-button entrance-submit" type="submit" disabled>正在连接…</button>
+      </form>
+      <p class="entrance-note">聊天与记忆保存在当前浏览器。<br>共享口令不是账户，换设备或浏览器不会同步。</p>
+    </section>
+  </main>
+  <div class="workspace" id="workspace" hidden>
     <header class="workspace-header">
       <h1 class="visually-hidden">全Agent轻量聊天实验台</h1>
+      <div class="workspace-meta">
+        <span class="local-storage-label"><i aria-hidden="true"></i>当前浏览器保存</span>
+        <div class="workspace-links">
+          <button id="guide-open" class="text-action" type="button">使用指南</button>
+          <span aria-hidden="true">·</span>
+          <button id="logout" class="text-action" type="button">退出体验</button>
+        </div>
+      </div>
       <div class="toolbar" aria-label="聊天选择">
         <div class="toolbar-agent">
           <span class="control-label">Agent</span>
@@ -102,8 +128,9 @@
       <aside id="memory-panel" class="panel inspector memory-panel" aria-labelledby="memory-heading" tabindex="-1">
         <header class="panel-header inspector-header">
           <span class="panel-icon"><img src="/assets/icons/archive.svg" alt=""></span>
-          <div class="panel-heading-copy"><p class="panel-eyebrow">MEMORY</p><h2 id="memory-heading">记忆</h2></div><span class="panel-heading-dot" aria-hidden="true"></span>
+          <div class="panel-heading-copy"><p class="panel-eyebrow">MEMORY</p><h2 id="memory-heading">记忆</h2></div><button id="clear-memory" class="text-action clear-memory-button" type="button" disabled>清空记忆</button>
         </header>
+        <p class="memory-local-note">当前用户 × 当前角色 · 本机保存</p>
         <div id="memory-content" class="inspector-content">
           <p class="panel-empty">选择用户和 Agent 后，可查看这组对话积累的记忆。</p>
         </div>
@@ -212,6 +239,32 @@
         <button class="primary-button" type="submit">创建</button>
       </div>
     </form>
+  </dialog>
+  <dialog id="guide-dialog" class="guide-dialog" aria-labelledby="guide-title" aria-describedby="guide-copy">
+    <div class="guide-kicker"><span>第一次来到这里</span><span id="guide-progress">1 / 4</span></div>
+    <h2 id="guide-title"></h2>
+    <p id="guide-copy" class="guide-copy"></p>
+    <p id="guide-note" class="guide-note"></p>
+    <div class="guide-actions">
+      <button id="guide-skip" class="text-action" type="button">跳过引导</button>
+      <div><button id="guide-back" class="secondary-button" type="button">上一步</button><button id="guide-next" class="primary-button" type="button">下一步</button></div>
+    </div>
+  </dialog>
+  <dialog id="clear-memory-dialog" class="local-dialog" aria-labelledby="clear-memory-title">
+    <h2 id="clear-memory-title">清空这组记忆？</h2>
+    <p id="clear-memory-scope" class="local-dialog-scope"></p>
+    <p>会删除这位用户与当前角色的画像、用户概括，以及活跃、归档和已撤回记忆。聊天记录会保留。</p>
+    <p class="guide-note">之后的聊天会从清空后的记忆开始。此操作无法撤销。</p>
+    <p id="clear-memory-error" class="field-error" role="alert" hidden></p>
+    <div class="dialog-actions"><button id="clear-memory-cancel" class="secondary-button" type="button">取消</button><button id="clear-memory-confirm" class="primary-button danger-button" type="button">确认清空</button></div>
+  </dialog>
+  <dialog id="recovery-dialog" class="local-dialog recovery-dialog" aria-labelledby="recovery-title">
+    <h2 id="recovery-title">上次的消息已留在本机</h2>
+    <p id="recovery-copy">回复连接中断，以下内容尚未完成保存。恢复后可继续编辑消息，再决定是否发送。</p>
+    <p class="inspector-label">你发出的消息</p><pre id="recovery-messages" class="recovery-content"></pre>
+    <div id="recovery-assistant-section" hidden><p class="inspector-label">已收到的回复片段</p><pre id="recovery-assistant" class="recovery-content"></pre></div>
+    <p id="recovery-error" class="field-error" role="alert" hidden></p>
+    <div class="dialog-actions"><button id="recovery-close" class="secondary-button" type="button">稍后处理</button><button id="recovery-restore" class="primary-button" type="button">恢复为草稿</button></div>
   </dialog>
   <div id="usage-tooltip" class="usage-tooltip" role="tooltip" hidden></div>
 </body>
