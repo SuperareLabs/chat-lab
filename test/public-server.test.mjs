@@ -51,6 +51,16 @@ async function fixture(t, overrides = {}) {
   return { lab, request, login, dbPath, calls: () => calls };
 }
 
+test('the public server defaults to an adult visitor test profile', async t => {
+  const f = await fixture(t, { defaultChildren: undefined });
+  const cookie = await f.login();
+  const result = await (await f.request('/api/local', { method: 'POST', cookie, body: { method: 'GET', path: '/api/state' } })).json();
+  assert.equal(result.value.children.length, 1);
+  assert.equal(result.value.children[0].name, '访客');
+  assert.equal(result.value.children[0].age, 22);
+  assert.equal(f.calls(), 0);
+});
+
 test('public APIs all require login and cannot fall back to the server-owned database', async t => {
   const f = await fixture(t);
   assert.equal(f.lab.runtime, null); assert.equal(f.lab.store, null);

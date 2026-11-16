@@ -62,6 +62,29 @@ async function client(f, initial = null) {
     newSession() { return send('POST', '/api/sessions', scope); } };
 }
 
+test('only the untouched initial visitor receives the adult demo age while memories and other profiles remain intact', async () => {
+  const f = fixture(), a = await client(f);
+  await a.chat('每周末练习吉他。');
+  await a.newSession();
+  await a.send('POST', '/api/children', { name: '小朋友', age: 8, interests: [] });
+  await a.send('POST', '/api/children', { name: '访客', age: null, interests: [] });
+  const before = structuredClone(a.snapshot);
+  const updated = createBrowserWorkspace({ ...f.config, defaultChildren: [{ name: '访客', age: 22, interests: [] }] });
+  const result = await updated.execute({ method: 'GET', path: '/api/state', snapshot: before });
+  assert.equal(result.snapshot.tables.children[0].age, 22);
+  assert.equal(result.snapshot.tables.children[0].version, before.tables.children[0].version + 1);
+  assert.deepEqual(result.snapshot.tables.children.slice(1), before.tables.children.slice(1));
+  assert(result.invalidates.includes('/api/memory'));
+  for (const [table, rows] of Object.entries(before.tables)) if (table !== 'children') assert.deepEqual(result.snapshot.tables[table], rows, table);
+  const again = await updated.execute({ method: 'GET', path: '/api/state', snapshot: result.snapshot });
+  assert.deepEqual(again.snapshot, result.snapshot);
+  for (const fields of [{ age: 8 }, { name: '自建用户' }, { version: 1 }, { interests: '["足球"]' }]) {
+    const personal = structuredClone(before);Object.assign(personal.tables.children[0], fields);
+    const kept = await updated.execute({ method: 'GET', path: '/api/state', snapshot: personal });
+    assert.deepEqual(kept.snapshot.tables.children, personal.tables.children);
+  }
+});
+
 test('new workspaces never open configured disk DBs or import an existing person', async () => {
   const ignoredPath = join(tmpdir(), 'browser-workspace-must-not-exist-' + crypto.randomUUID(), 'legacy.sqlite');
   const f = fixture({ dbPath: ignoredPath, defaultChildren: [] });

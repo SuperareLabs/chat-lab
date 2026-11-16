@@ -151,7 +151,7 @@ export function createLabServer(options = {}) {
   const gate = browserMode ? createAccessGate({ password: config.accessPassword }) : null;
   const browserWorkspace = browserMode ? createBrowserWorkspace({ ...config, appVersion: APP_VERSION,
     defaultAgents: config.defaultAgents ?? JSON.parse(readFileSync(new URL('./config/default-agents.json', import.meta.url), 'utf8')).agents,
-    defaultChildren: config.defaultChildren ?? [{ name: '访客', age: null, interests: [] }],
+    defaultChildren: config.defaultChildren ?? [{ name: '访客', age: 22, interests: [] }],
   }) : null;
   const activeWorkspaces = new Set();
   const workspaceControllers = new Set();
