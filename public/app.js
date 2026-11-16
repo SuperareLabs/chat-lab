@@ -1109,6 +1109,14 @@ async function changeScope(preferred = '') {
   if (!hasScope()) { saveSelection(); renderMemory({}); return; }
   const [sessionLoaded] = await Promise.all([refreshSessions(preferred), refreshMemory()]);
   if (sessionLoaded) await openSession(state.sessionId);
+  if (workspaceClient) {
+    const scopeVersion = state.scopeVersion;
+    const draft = await workspaceClient.draftForScope();
+    if (scopeVersion === state.scopeVersion && draft?.text) {
+      ui['chat-input'].value = draft.text;
+      fitComposer();
+    }
+  }
 }
 
 async function createSession() {
@@ -1393,14 +1401,16 @@ function installListeners() {
   }
 }
 
-async function loadState(data) {
+async function loadState(data, { preferDefaultAgent = false } = {}) {
   const versionChanged = state.dataVersion && state.dataVersion !== data.dataVersion;
   const saved = savedSelection();
   state.dataVersion = data.dataVersion || '';
   state.agents = data.agents || [];
   state.children = data.children || [];
   state.model = data.model || {};
-  state.agentId = state.agents.find(item => item.id === saved.agentId)?.id || state.agents[0]?.id || '';
+  const defaultAgentId = state.agents.find(item => item.id === 'lin-xiaoman')?.id || state.agents[0]?.id || '';
+  state.agentId = (preferDefaultAgent ? defaultAgentId : '') ||
+    state.agents.find(item => item.id === saved.agentId)?.id || defaultAgentId;
   state.childId = state.children.find(item => item.id === saved.childId)?.id || state.children[0]?.id || '';
   await changeScope(!versionChanged && saved.agentId === state.agentId && saved.childId === state.childId ? saved.sessionId : '');
 }
@@ -1528,16 +1538,12 @@ async function completeWorkspaceEntry(serial) {
     const initial = workspaceClient
       ? await workspaceClient.api('/api/state', undefined, 'GET', { force: true })
       : await api('/api/state');
-    await loadState(initial);
+    await loadState(initial, { preferDefaultAgent: true });
     if (serial !== bootstrapSerial || !state.authenticated) return;
     el('entrance-password').value = '';
     el('entrance').hidden = true;
     el('workspace').hidden = false;
     document.body.classList.remove('entrance-active');
-    if (workspaceClient) {
-      const draft = (await workspaceClient.metadata()).draft;
-      if (draft?.text && draft.childId === state.childId && draft.agentId === state.agentId) { ui['chat-input'].value = draft.text; fitComposer(); }
-    }
     await workspaceClient?.resumeDeadlines();
     const recovered = await offerRecovery();
     if (!recovered && workspaceClient && !(await workspaceClient.metadata()).guideSeen) openGuide();

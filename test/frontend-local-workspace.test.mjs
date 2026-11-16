@@ -29,6 +29,26 @@ const client = async (store, fetcher, extra = {}) => {
   return workspace;
 };
 
+test('entering a default role preserves another role legacy draft and restores drafts by user and role', async t => {
+  const store = new MemoryStore();
+  const original = { childId: 'u1', agentId: 'croc', sessionId: 's1', text: '原角色未发送内容' };
+  await store.updateMeta(meta => ({ ...meta, draft: original }));
+  let scope = { childId: 'u1', agentId: 'lin-xiaoman', sessionId: 's2' };
+  const workspace = await client(store, async () => { throw new Error('no network needed'); }, { getScope: () => scope });
+  t.after(() => workspace.stop());
+  assert.equal(await workspace.draftForScope(), null);
+  await workspace.saveDraft({ ...scope, text: '小满的草稿' });
+  assert.equal((await workspace.draftForScope()).text, '小满的草稿');
+  assert.deepEqual(await workspace.draftForScope(original), original);
+  await workspace.saveDraft(null);
+  assert.equal(await workspace.draftForScope(), null);
+  assert.deepEqual(await workspace.draftForScope(original), original);
+  scope = { childId: 'u2', agentId: 'croc' };
+  assert.equal(await workspace.draftForScope(), null);
+  scope = original;
+  assert.deepEqual(await workspace.draftForScope(), original);
+});
+
 test('bootstrap starts with no server workspace and repeated GETs use saved views without network polling', async t => {
   const store = new MemoryStore();
   const requests = [];

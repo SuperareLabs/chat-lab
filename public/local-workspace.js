@@ -174,7 +174,25 @@ export class LocalWorkspace {
   async metadata() { return await this.store.read('meta') || {}; }
   async saveSelection(selection) { await this.store.updateMeta(meta => ({ ...meta, selection: clone(selection) })); }
   async saveGuide() { await this.store.updateMeta(meta => ({ ...meta, guideSeen: true })); }
-  async saveDraft(draft) { await this.store.updateMeta(meta => ({ ...meta, draft: clone(draft) })); }
+  async saveDraft(draft) {
+    await this.store.updateMeta(meta => {
+      const drafts = { ...meta.drafts };
+      const key = value => value?.childId && value?.agentId ? JSON.stringify([value.childId, value.agentId]) : null;
+      const previousKey = key(meta.draft);
+      if (previousKey && meta.draft.text) drafts[previousKey] = clone(meta.draft);
+      const currentKey = key(draft || this.getScope());
+      if (currentKey) {
+        if (draft?.text) drafts[currentKey] = clone(draft);
+        else delete drafts[currentKey];
+      }
+      return { ...meta, draft: clone(draft), drafts };
+    });
+  }
+  async draftForScope(scope = this.getScope()) {
+    const meta = await this.metadata();
+    const key = JSON.stringify([scope.childId, scope.agentId]);
+    return meta.drafts?.[key] || (meta.draft?.childId === scope.childId && meta.draft?.agentId === scope.agentId ? meta.draft : null);
+  }
   async saveOutbox(outbox, owner = this.owner) {
     await this.store.updateMeta(meta => {
       const outboxes = { ...meta.outboxes };
