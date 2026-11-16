@@ -174,7 +174,80 @@ export class LocalWorkspace {
   async metadata() { return await this.store.read('meta') || {}; }
   async saveSelection(selection) { await this.store.updateMeta(meta => ({ ...meta, selection: clone(selection) })); }
   async saveGuide() { await this.store.updateMeta(meta => ({ ...meta, guideSeen: true })); }
-  async saveDraft(draft) { await this.store.updateMeta(meta => ({ ...meta, draft: clone(draft) })); }
+  async catalogOwnerKey(create = false) {
+    const valid = key => typeof key === 'string' && /^[a-f0-9]{64}$/.test(key);
+    if (!create) {
+      const key = (await this.metadata()).catalogOwnerKey;
+      if (key === undefined) return null;
+      if (!valid(key)) throw new Error('本机角色管理凭证无法读取，请保留网站数据并联系维护者。');
+      return key;
+    }
+    const candidate = [...crypto.getRandomValues(new Uint8Array(32))].map(byte => byte.toString(16).padStart(2, '0')).join('');
+    const meta = await this.store.updateMeta(meta => {
+      if (meta.catalogOwnerKey !== undefined && !valid(meta.catalogOwnerKey)) throw new Error('本机角色管理凭证无法读取，已停止创建。');
+      return { ...meta, catalogOwnerKey: meta.catalogOwnerKey || candidate };
+    });
+    if (!valid(meta.catalogOwnerKey)) throw new Error('角色管理凭证未能保存，已停止创建。');
+    return meta.catalogOwnerKey;
+  }
+  async catalogRequest(path = '/api/catalog', { method = 'GET', body, ownerKey } = {}) {
+    const key = ownerKey ?? await this.catalogOwnerKey();
+    const response = await this.fetcher(path, { method, cache: 'no-store',
+      headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(key ? { 'X-Chat-Lab-Owner': key } : {}) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    const value = await response.json().catch(() => null);
+    if (response.status === 401) this.onUnauthorized();
+    if (!response.ok || !value) {
+      const error = new Error(value?.error || `公共角色库请求失败 (${response.status})`);
+      error.status = response.status;
+      throw error;
+    }
+    return value;
+  }
+  async createPublicAgent({ name, definition }) {
+    const ownerKey = await this.catalogOwnerKey(true);
+    const meta = await this.store.updateMeta(meta => {
+      const pending = [...(meta.catalogPendingCreates || [])];
+      if (!pending.some(item => item.name === name && item.definition === definition)) pending.push({ name, definition, requestId: identifier() });
+      return { ...meta, catalogPendingCreates: pending };
+    });
+    const request = meta.catalogPendingCreates.find(item => item.name === name && item.definition === definition);
+    if (!request?.requestId) throw new Error('创建请求未能保存，已停止公开创建。');
+    const result = await this.catalogRequest('/api/catalog/agents', { method: 'POST', body: request, ownerKey });
+    if (!result.agent?.id) throw new Error('公共角色已提交，但返回结果不完整；请保留设定后重试。');
+    await this.store.updateMeta(meta => ({ ...meta,
+      catalogPendingCreates: (meta.catalogPendingCreates || []).filter(item => item.requestId !== request.requestId) }));
+    return result;
+  }
+  async updatePublicAgent(id, body) {
+    const ownerKey = await this.catalogOwnerKey();
+    if (!ownerKey) throw new Error('当前浏览器没有这个角色的管理凭证。');
+    return this.catalogRequest(`/api/catalog/agents/${encodeURIComponent(id)}`, { method: 'PATCH', body, ownerKey });
+  }
+  async deletePublicAgent(id, revision) {
+    const ownerKey = await this.catalogOwnerKey();
+    if (!ownerKey) throw new Error('当前浏览器没有这个角色的管理凭证。');
+    return this.catalogRequest(`/api/catalog/agents/${encodeURIComponent(id)}`, { method: 'DELETE', body: { revision }, ownerKey });
+  }
+  async saveDraft(draft) {
+    await this.store.updateMeta(meta => {
+      const drafts = { ...meta.drafts };
+      const key = value => value?.childId && value?.agentId ? JSON.stringify([value.childId, value.agentId]) : null;
+      const previousKey = key(meta.draft);
+      if (previousKey && meta.draft.text) drafts[previousKey] = clone(meta.draft);
+      const currentKey = key(draft || this.getScope());
+      if (currentKey) {
+        if (draft?.text) drafts[currentKey] = clone(draft);
+        else delete drafts[currentKey];
+      }
+      return { ...meta, draft: clone(draft), drafts };
+    });
+  }
+  async draftForScope(scope = this.getScope()) {
+    const meta = await this.metadata();
+    const key = JSON.stringify([scope.childId, scope.agentId]);
+    return meta.drafts?.[key] || (meta.draft?.childId === scope.childId && meta.draft?.agentId === scope.agentId ? meta.draft : null);
+  }
   async saveOutbox(outbox, owner = this.owner) {
     await this.store.updateMeta(meta => {
       const outboxes = { ...meta.outboxes };

@@ -10,6 +10,7 @@ import { ChatStore, problem } from './lib/store.mjs';
 import { ChatRuntime } from './lib/runtime.mjs';
 import { createAccessGate } from './lib/access-gate.mjs';
 import { createBrowserWorkspace, BROWSER_WORKSPACE_MAX_BYTES } from './lib/browser-workspace.mjs';
+import { PublicCatalog } from './lib/public-catalog.mjs';
 
 const PUBLIC = fileURLToPath(new URL('./public/', import.meta.url));
 const APP_VERSION = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
@@ -149,9 +150,13 @@ export function createLabServer(options = {}) {
   const store = browserMode ? null : new ChatStore(config.dbPath);
   const runtime = browserMode ? null : new ChatRuntime({ appVersion: APP_VERSION, ...config, store });
   const gate = browserMode ? createAccessGate({ password: config.accessPassword }) : null;
+  if (browserMode && config.catalogPath && config.catalogPath !== ':memory:' && config.dbPath !== ':memory:' &&
+      resolve(config.catalogPath) === resolve(config.dbPath)) throw new Error('公共角色库必须与旧聊天数据库使用不同文件');
+  const catalog = browserMode ? config.catalog ?? new PublicCatalog({ path: config.catalogPath ?? ':memory:' }) : null;
+  const defaultAgents = browserMode ? config.defaultAgents ?? JSON.parse(readFileSync(new URL('./config/default-agents.json', import.meta.url), 'utf8')).agents : [];
   const browserWorkspace = browserMode ? createBrowserWorkspace({ ...config, appVersion: APP_VERSION,
-    defaultAgents: config.defaultAgents ?? JSON.parse(readFileSync(new URL('./config/default-agents.json', import.meta.url), 'utf8')).agents,
-    defaultChildren: config.defaultChildren ?? [{ name: '访客', age: null, interests: [] }],
+    catalog, defaultAgents,
+    defaultChildren: config.defaultChildren ?? [{ name: '访客', age: 22, interests: [] }],
   }) : null;
   const activeWorkspaces = new Set();
   const workspaceControllers = new Set();
@@ -175,6 +180,34 @@ export function createLabServer(options = {}) {
     }
     if (browserMode && pathname.startsWith('/api/')) {
       gate.require(request);
+      if (!accepting) throw problem('服务正在重启，请稍后再试', 503);
+      const ownerKey = request.headers['x-chat-lab-owner'];
+      if (pathname === '/api/catalog' && method === 'GET') {
+        if ([...searchParams.keys()].some(key => key !== 'revision') || searchParams.getAll('revision').length > 1) {
+          throw problem('公共角色库地址参数无效');
+        }
+        if (ownerKey !== undefined && (typeof ownerKey !== 'string' || !/^[a-f0-9]{64}$/.test(ownerKey))) {
+          throw problem('缺少有效的角色管理凭证', 403);
+        }
+        if (searchParams.has('revision')) {
+          const supplied = searchParams.get('revision');
+          if (!/^(0|[1-9]\d*)$/.test(supplied) || !Number.isSafeInteger(Number(supplied))) throw problem('公共角色库版本无效');
+          const revision = catalog.currentRevision();
+          if (Number(supplied) === revision) return sendJson(response, 200, { revision, unchanged: true });
+        }
+        return sendJson(response, 200, { ...catalog.list(ownerKey), defaultAgentIds: defaultAgents.map(agent => agent.id) });
+      }
+      if (pathname === '/api/catalog/agents' && method === 'POST') {
+        return sendJson(response, 201, catalog.create(await jsonBody(request), { ownerKey }));
+      }
+      const publicAgent = /^\/api\/catalog\/agents\/([^/]+)$/.exec(pathname);
+      if (publicAgent && ['PATCH', 'DELETE'].includes(method)) {
+        let id;
+        try { id = decodeURIComponent(publicAgent[1]); }
+        catch { throw problem('找不到此公共角色', 404); }
+        const body = await jsonBody(request);
+        return sendJson(response, 200, method === 'PATCH' ? catalog.update(id, body, { ownerKey }) : catalog.delete(id, body, { ownerKey }));
+      }
       // Do not expose old server-owned users, records or CRUD routes in public mode.
       if (pathname !== '/api/local' || method !== 'POST') throw problem('找不到此地址', 404);
       if (!accepting || activeWorkspaces.size >= 4) throw problem('当前服务较忙，请稍后再试', 503);
@@ -337,7 +370,7 @@ export function createLabServer(options = {}) {
   });
 
   return {
-    server, runtime, store, storageMode: config.storageMode, model: config.model,
+    server, runtime, store, catalog, storageMode: config.storageMode, model: config.model,
     async listen(port = config.port) {
       await new Promise((resolveListen, reject) => {
         server.once('error', reject);
@@ -363,6 +396,7 @@ export function createLabServer(options = {}) {
       await closed;
       store?.close();
       gate?.close();
+      catalog?.close();
     },
   };
 }

@@ -29,6 +29,74 @@ const client = async (store, fetcher, extra = {}) => {
   return workspace;
 };
 
+test('public creator credentials persist atomically between tabs and never enter workspace snapshots', async t => {
+  const store = new MemoryStore(), envelopes = [];
+  const fetcher = async (path, options) => { envelopes.push({ path, ...options }); return json(result()); };
+  const a = await client(store, fetcher), b = await client(store, fetcher);
+  t.after(() => { a.stop(); b.stop(); });
+  const [keyA, keyB] = await Promise.all([a.catalogOwnerKey(true), b.catalogOwnerKey(true)]);
+  assert.match(keyA, /^[a-f0-9]{64}$/);
+  assert.equal(keyA, keyB);
+  assert.equal(await b.catalogOwnerKey(), keyA);
+  await a.api('/api/state');
+  assert(!envelopes[0].body.includes(keyA));
+  assert.equal(JSON.parse(envelopes[0].body).snapshot, null);
+  assert(!(await store.read('workspace')).snapshot.catalogOwnerKey);
+});
+
+test('a dropped public create response retries the same persisted request without publishing a duplicate', async t => {
+  const store = new MemoryStore(), requests = [];
+  let drop = true;
+  const fetcher = async (path, options) => {
+    assert.equal(path, '/api/catalog/agents');
+    const body = JSON.parse(options.body);
+    requests.push({ body, key: options.headers['X-Chat-Lab-Owner'] });
+    if (drop) { drop = false; throw new Error('response lost'); }
+    return json({ agent: { id: 'public-a', ...body }, catalogRevision: 1 });
+  };
+  const first = await client(store, fetcher);
+  t.after(() => first.stop());
+  const input = { name: '公开搭子', definition: '  定义原文\n保留换行  ' };
+  await assert.rejects(first.createPublicAgent(input), /response lost/);
+  const reopened = await client(store, fetcher);
+  t.after(() => reopened.stop());
+  const result = await reopened.createPublicAgent(input);
+  assert.equal(result.agent.id, 'public-a');
+  assert.deepEqual(requests[0], requests[1]);
+  assert.equal(requests[1].body.definition, input.definition);
+  assert.deepEqual((await reopened.metadata()).catalogPendingCreates, []);
+});
+
+test('failed credential persistence prevents any public create request', async t => {
+  const store = new MemoryStore();
+  let calls = 0;
+  const workspace = await client(store, async () => { calls++; throw new Error('must not request'); });
+  t.after(() => workspace.stop());
+  store.updateMeta = async () => { throw new Error('quota'); };
+  await assert.rejects(workspace.createPublicAgent({ name: '名字', definition: '设定' }), /quota/);
+  assert.equal(calls, 0);
+});
+
+test('entering a default role preserves another role legacy draft and restores drafts by user and role', async t => {
+  const store = new MemoryStore();
+  const original = { childId: 'u1', agentId: 'croc', sessionId: 's1', text: '原角色未发送内容' };
+  await store.updateMeta(meta => ({ ...meta, draft: original }));
+  let scope = { childId: 'u1', agentId: 'lin-xiaoman', sessionId: 's2' };
+  const workspace = await client(store, async () => { throw new Error('no network needed'); }, { getScope: () => scope });
+  t.after(() => workspace.stop());
+  assert.equal(await workspace.draftForScope(), null);
+  await workspace.saveDraft({ ...scope, text: '小满的草稿' });
+  assert.equal((await workspace.draftForScope()).text, '小满的草稿');
+  assert.deepEqual(await workspace.draftForScope(original), original);
+  await workspace.saveDraft(null);
+  assert.equal(await workspace.draftForScope(), null);
+  assert.deepEqual(await workspace.draftForScope(original), original);
+  scope = { childId: 'u2', agentId: 'croc' };
+  assert.equal(await workspace.draftForScope(), null);
+  scope = original;
+  assert.deepEqual(await workspace.draftForScope(), original);
+});
+
 test('bootstrap starts with no server workspace and repeated GETs use saved views without network polling', async t => {
   const store = new MemoryStore();
   const requests = [];
@@ -253,6 +321,7 @@ test('the real entry controller reaches recovery before loadState, then resumes 
     },
     state: { authenticated: false, busy: false }, selectedScope: () => ({}),
     loadState: async data => loaded.push(data), updateControls() {}, fitComposer() {},
+    refreshCatalogPermissions: async () => false,
     offerRecovery: async () => false, openGuide() {}, refreshLocalView() {}, show() {}, showEntrance() {},
     ui: { 'chat-input': { value: '' } }, el, Date,
     document: { body: { classList: { remove() {} } } },
