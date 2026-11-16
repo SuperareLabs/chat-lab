@@ -28,6 +28,7 @@ let pendingEntry = null;
 let entryRecoveryTimer;
 const avatars = new Map([['9a15fadb-1fa5-437d-aeee-6f2a3e1e8d65', '/assets/benny.png']]);
 const defaultPortraits = new Map([['2faddbf5-f25c-4972-9cb2-e57ee021ac12', '/assets/zhou-yu-portrait.png']]);
+const agentDisplayOrder = new Map([['lin-xiaoman', 0], ['9a15fadb-1fa5-437d-aeee-6f2a3e1e8d65', 1]]);
 const fallbackAvatar = '/assets/icons/person-circle.svg';
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const sendPauseMs = 750;
@@ -1428,7 +1429,8 @@ const agentEditor = installAgentEditor({
 
 const syncAgentGalleryRoute = installAgentGallery({
   trigger: ui['agent-select'],
-  getAgents: () => state.agents,
+  getAgents: () => [...state.agents].sort((a, b) =>
+    (agentDisplayOrder.get(a.id) ?? 2) - (agentDisplayOrder.get(b.id) ?? 2)),
   getSelectedId: () => state.agentId,
   getDataVersion: () => state.dataVersion,
   requestJSON: path => api(path),
