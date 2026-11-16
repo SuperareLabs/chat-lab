@@ -233,6 +233,35 @@ test('role cards show saved name and definition only, preserve paragraphs and ex
   assert.deepEqual(edited, ['a']);
 });
 
+test('public role cards expose management only to their creator and keep delete distinct from edit', async () => {
+  const { document } = dom();
+  const source = gallerySource.slice(gallerySource.indexOf('function element('), gallerySource.indexOf('\nfunction drawConnections('));
+  const render = runInNewContext(`${source}\nrenderCard;`, { document });
+  const article = new Element('article'), edited = [], removed = [];
+  const common = { id: 'public-a', name: '公共角色', definition: '设定', sourceLabel: '公共角色' };
+  render(article, { ...common, canEdit: false, canDelete: false }, '/assets/icons/person-circle.svg', id => edited.push(id), id => removed.push(id));
+  assert.equal(article.querySelector('.gallery-edit-button'), null);
+  assert.equal(article.querySelector('.gallery-delete-button'), null);
+  render(article, { ...common, canEdit: true, canDelete: true, sourceLabel: '公共角色 · 我创建的' }, '/assets/icons/person-circle.svg', id => edited.push(id), id => removed.push(id));
+  await article.querySelector('.gallery-delete-button').fire('click');
+  assert.deepEqual(removed, ['public-a']);
+  assert.deepEqual(edited, []);
+  assert.match(article.textContent, /我创建的/);
+});
+
+test('a catalog unchanged probe retains creator permissions without requesting workspace snapshots', async () => {
+  const start = appSource.indexOf('async function refreshCatalogPermissions(');
+  const source = appSource.slice(start, appSource.indexOf('\nasync function readEditableAgent', start));
+  const state = { catalogRevision: 7, catalogAgents: [{ id: 'mine', canManage: true }], catalogAvailable: true };
+  const paths = [];
+  const refresh = runInNewContext(`let defaultAgentIds = new Set();${source}\nrefreshCatalogPermissions;`, { state,
+    workspaceClient: { catalogRequest: async path => { paths.push(path); return { revision: 7, unchanged: true }; },
+      api: async () => { throw new Error('must not send workspace'); } } });
+  assert.equal(await refresh({ probe: true }), false);
+  assert.deepEqual(paths, ['/api/catalog?revision=7']);
+  assert.equal(state.catalogAgents[0].canManage, true);
+});
+
 test('saving invalidates real prompt details even when the memory data version is unchanged', async () => {
   const { document, nodes } = dom();
   const location = { href: 'http://localhost/', hash: '' };

@@ -19,6 +19,7 @@ const state = {
   pendingMessages: [], pendingTimer: null,
   memorySignature: null, memoryOpen: new Set(), memoryDetails: new Map(), memoryData: null, memoryFilter: 'active', polling: false,
   sessionUsage: null, liveToolCalls: null,
+  catalogRevision: null, catalogAvailable: false, catalogAgents: [],
 };
 const selectionKey = 'croco-lab-v1.selection';
 let workspaceClient = null;
@@ -29,6 +30,9 @@ let entryRecoveryTimer;
 const avatars = new Map([['9a15fadb-1fa5-437d-aeee-6f2a3e1e8d65', '/assets/benny.png']]);
 const defaultPortraits = new Map([['2faddbf5-f25c-4972-9cb2-e57ee021ac12', '/assets/zhou-yu-portrait.png']]);
 const agentDisplayOrder = new Map([['lin-xiaoman', 0], ['9a15fadb-1fa5-437d-aeee-6f2a3e1e8d65', 1]]);
+let defaultAgentIds = new Set(['lin-xiaoman', '9a15fadb-1fa5-437d-aeee-6f2a3e1e8d65', 'pinecone-lab',
+  '2faddbf5-f25c-4972-9cb2-e57ee021ac12', '4fbfe444-659b-4915-ac3f-1842b6617b54',
+  '90377140-008d-45d6-a2a1-61760514cdf9', 'f29db1e7-c667-4044-a37e-38254830d405', 'a1338cd3-e952-4f52-98b9-7ee6c8280fe7']);
 const fallbackAvatar = '/assets/icons/person-circle.svg';
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const sendPauseMs = 750;
@@ -76,8 +80,11 @@ async function api(path, body, method = 'POST') {
   return data;
 }
 
-function installAgentEditor({ canOpen, onSaved, onBusyChanged = () => {} }) {
-  const fields = Object.fromEntries(['title', 'form', 'name', 'definition', 'error', 'reload', 'cancel', 'save']
+function installAgentEditor({ canOpen, onSaved, onBusyChanged = () => {},
+  readAgent = id => api(`/api/agents/${encodeURIComponent(id)}`),
+  writeAgent = (id, body) => api(id ? `/api/agents/${encodeURIComponent(id)}` : '/api/agents', body, id ? 'PATCH' : 'POST'),
+  getNote = () => '' }) {
+  const fields = Object.fromEntries(['title', 'form', 'name', 'definition', 'note', 'error', 'reload', 'cancel', 'save']
     .map(key => [key, el(`agent-editor-${key}`)]));
   const dialog = el('agent-editor');
   let editingId = '';
@@ -109,7 +116,7 @@ function installAgentEditor({ canOpen, onSaved, onBusyChanged = () => {} }) {
     errorMessage();
     renderControls();
     try {
-      const { agent } = await api(`/api/agents/${encodeURIComponent(editingId)}`);
+      const { agent } = await readAgent(editingId);
       if (serial !== loadSerial || !dialog.open) return;
       if (!agent || agent.id !== editingId || typeof agent.name !== 'string' || typeof agent.definition !== 'string' || agent.revision == null) {
         throw new Error('角色数据不完整，请重新载入。');
@@ -141,6 +148,7 @@ function installAgentEditor({ canOpen, onSaved, onBusyChanged = () => {} }) {
     conflicted = false;
     pendingSaved = null;
     fields.title.textContent = id ? '编辑角色' : '创建角色';
+    if (fields.note) { fields.note.textContent = getNote(id); fields.note.hidden = !fields.note.textContent; }
     fields.reload.hidden = true;
     errorMessage();
     renderControls();
@@ -170,8 +178,7 @@ function installAgentEditor({ canOpen, onSaved, onBusyChanged = () => {} }) {
     renderControls();
     try {
       if (!pendingSaved) {
-        const result = await api(editingId ? `/api/agents/${encodeURIComponent(editingId)}` : '/api/agents',
-          { name, definition, ...(editingId ? { revision } : {}) }, editingId ? 'PATCH' : 'POST');
+        const result = await writeAgent(editingId, { name, definition, ...(editingId ? { revision } : {}) });
         if (!result.agent?.id) throw new Error('保存结果不完整，请重新载入角色列表。');
         pendingSaved = { agent: result.agent, created: !editingId };
       }
@@ -1415,8 +1422,54 @@ async function loadState(data, { preferDefaultAgent = false } = {}) {
   await changeScope(!versionChanged && saved.agentId === state.agentId && saved.childId === state.childId ? saved.sessionId : '');
 }
 
+function publicAgent(selected) { return Boolean(selected?.publicCatalog || selected?.metadata?.publicCatalog); }
+function agentPermissions(selected) {
+  if (publicAgent(selected)) {
+    const own = state.catalogAgents.some(item => item.id === selected.id && item.canManage === true);
+    return { canEdit: own, canDelete: own, sourceLabel: own ? '公共角色 · 我创建的' : '公共角色' };
+  }
+  const builtin = defaultAgentIds.has(selected.id);
+  return { canEdit: true, canDelete: Boolean(workspaceClient && !builtin), sourceLabel: builtin ? '内置角色 · 本机编辑' : '仅当前浏览器' };
+}
+
+async function refreshCatalogPermissions({ probe = false } = {}) {
+  if (!workspaceClient) return false;
+  const path = probe && Number.isSafeInteger(state.catalogRevision) ? `/api/catalog?revision=${state.catalogRevision}` : '/api/catalog';
+  const catalog = await workspaceClient.catalogRequest(path);
+  if (catalog.unchanged === true && catalog.revision === state.catalogRevision) return false;
+  if (!Number.isSafeInteger(catalog.revision) || !Array.isArray(catalog.agents)) throw new Error('公共角色库返回的数据不完整。');
+  const changed = state.catalogRevision !== catalog.revision;
+  state.catalogRevision = catalog.revision;
+  state.catalogAvailable = true;
+  state.catalogAgents = catalog.agents;
+  if (Array.isArray(catalog.defaultAgentIds)) defaultAgentIds = new Set(catalog.defaultAgentIds);
+  return changed;
+}
+
+async function readEditableAgent(id) {
+  const selected = state.agents.find(item => item.id === id);
+  if (publicAgent(selected)) {
+    await refreshCatalogPermissions();
+    const current = state.catalogAgents.find(item => item.id === id);
+    if (!current?.canManage) throw new Error('当前浏览器只能查看和聊天，不能修改这个公共角色。');
+    return { agent: current };
+  }
+  return api(`/api/agents/${encodeURIComponent(id)}`);
+}
+
+async function saveEditableAgent(id, body) {
+  if (workspaceClient && !id) {
+    if (!state.catalogAvailable) throw new Error('公共角色库尚未连接，请刷新页面后再创建。');
+    return workspaceClient.createPublicAgent(body);
+  }
+  if (workspaceClient && publicAgent(state.agents.find(item => item.id === id))) return workspaceClient.updatePublicAgent(id, body);
+  return api(id ? `/api/agents/${encodeURIComponent(id)}` : '/api/agents', body, id ? 'PATCH' : 'POST');
+}
+
 async function applyAgentChange(savedAgent, { created }) {
-  const data = await api('/api/state');
+  const local = typeof workspaceClient !== 'undefined' && workspaceClient;
+  if (local) await refreshCatalogPermissions();
+  const data = local ? await workspaceClient.api('/api/state', undefined, 'GET', { force: true }) : await api('/api/state');
   if (!data.agents?.some(item => item.id === savedAgent.id)) throw new Error('新角色尚未载入，请重试。');
   state.agents = data.agents;
   state.model = data.model || {};
@@ -1435,18 +1488,69 @@ const agentEditor = installAgentEditor({
   canOpen: () => !state.busy && !state.sending && !state.editorSaving && !state.pendingMessages.length,
   onSaved: applyAgentChange,
   onBusyChanged: value => { state.editorSaving = value; updateControls(); },
+  readAgent: readEditableAgent,
+  writeAgent: saveEditableAgent,
+  getNote: id => !id && workspaceClient ? '创建后所有人都能看到并聊天。角色名称和设定会公开，聊天与记忆仍各自保存在本机。'
+    : publicAgent(state.agents.find(item => item.id === id)) ? '修改会同步给所有使用者。已有聊天和记忆保留。'
+      : '这次编辑只保存在当前浏览器。',
 });
+
+let agentDeleteTarget = null;
+function openAgentDeletion(id) {
+  if (state.busy || state.sending || state.editorSaving || state.pendingMessages.length) return;
+  const selected = state.agents.find(item => item.id === id);
+  if (!selected || !agentPermissions(selected).canDelete) return;
+  agentDeleteTarget = { ...selected };
+  el('agent-delete-copy').textContent = publicAgent(selected)
+    ? `删除“${selected.name}”后，所有人的公共角色库都会移除此角色。`
+    : `将“${selected.name}”从当前浏览器的角色列表中移除。`;
+  el('agent-delete-error').hidden = true;
+  el('agent-delete-dialog').showModal();
+  el('agent-delete-cancel').focus();
+}
+el('agent-delete-cancel').addEventListener('click', () => el('agent-delete-dialog').close());
+el('agent-delete-confirm').addEventListener('click', async () => {
+  const target = agentDeleteTarget;
+  const button = el('agent-delete-confirm');
+  if (!target || button.disabled || state.busy || state.sending) return;
+  button.disabled = true;
+  el('agent-delete-cancel').disabled = true;
+  button.textContent = '正在删除…';
+  await runAction(async () => {
+    try {
+      if (!target.deleted) {
+        if (publicAgent(target)) await workspaceClient.deletePublicAgent(target.id, target.revision);
+        else await api(`/api/agents/${encodeURIComponent(target.id)}`, { revision: target.revision }, 'DELETE');
+        target.deleted = true;
+      }
+      await refreshCatalogPermissions();
+      const data = await workspaceClient.api('/api/state', undefined, 'GET', { force: true });
+      await loadState(data);
+      syncAgentGalleryRoute.refresh();
+      el('agent-delete-dialog').close();
+      put('chat-status', '角色已移除，已有聊天和记忆保留。');
+    } catch (error) {
+      el('agent-delete-error').textContent = target.deleted ? `角色已删除，刷新界面暂未完成：${error.message}。可以重试。` : error.message;
+      el('agent-delete-error').hidden = false;
+    }
+  });
+  button.disabled = false;
+  el('agent-delete-cancel').disabled = false;
+  button.textContent = '确认删除';
+});
+el('agent-delete-dialog').addEventListener('cancel', event => { if (el('agent-delete-confirm').disabled) event.preventDefault(); });
 
 const syncAgentGalleryRoute = installAgentGallery({
   trigger: ui['agent-select'],
-  getAgents: () => [...state.agents].sort((a, b) =>
+  getAgents: () => state.agents.map(item => ({ ...item, ...agentPermissions(item) })).sort((a, b) =>
     (agentDisplayOrder.get(a.id) ?? 2) - (agentDisplayOrder.get(b.id) ?? 2)),
   getSelectedId: () => state.agentId,
   getDataVersion: () => state.dataVersion,
   requestJSON: path => api(path),
   avatarFor: selected => selected.avatar || avatars.get(selected.id) || defaultPortraits.get(selected.id) || fallbackAvatar,
   onCreate: () => agentEditor.open(),
-  onEdit: id => agentEditor.open(id),
+  onEdit: id => { const selected = state.agents.find(item => item.id === id); if (selected && agentPermissions(selected).canEdit) void agentEditor.open(id); },
+  onDelete: id => openAgentDeletion(id),
   onSelect: id => runAction(async () => {
     if (!state.agents.some(item => item.id === id)) return;
     state.agentId = id;
@@ -1455,6 +1559,32 @@ const syncAgentGalleryRoute = installAgentGallery({
 });
 installListeners();
 void initializeEntrance();
+
+let catalogPolling = false;
+async function syncPublicCatalog() {
+  if (!workspaceClient || !state.authenticated || document.hidden || catalogPolling || pendingEntry ||
+      state.busy || state.sending || state.queueSaving || state.editorSaving || state.pendingMessages.length ||
+      el('agent-editor').open || el('agent-delete-dialog').open || el('recovery-dialog').open) return;
+  catalogPolling = true;
+  const client = workspaceClient, serial = bootstrapSerial;
+  let changed = false;
+  try {
+    changed = await refreshCatalogPermissions({ probe: true });
+    if (client !== workspaceClient || serial !== bootstrapSerial || !state.authenticated) return;
+    if (state.busy || state.sending || state.queueSaving || state.editorSaving || state.pendingMessages.length ||
+        el('agent-editor').open || el('agent-delete-dialog').open || el('recovery-dialog').open) {
+      if (changed) state.catalogRevision = null;
+      return;
+    }
+    if (changed) await runAction(async () => loadState(await workspaceClient.api('/api/state', undefined, 'GET', { force: true })));
+  } catch (error) {
+    if (changed) state.catalogRevision = null;
+    if (error.status !== 401 && state.authenticated) show('app-error', `公共角色库同步暂未完成：${error.message}`);
+  }
+  finally { catalogPolling = false; }
+}
+setInterval(() => void syncPublicCatalog(), 20_000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) void syncPublicCatalog(); });
 
 setInterval(async () => {
   if (workspaceClient || !state.authenticated || document.hidden || !hasScope() || state.polling || state.busy || state.editorSaving || state.sending || state.pendingMessages.length) return;
@@ -1483,6 +1613,9 @@ function showEntrance(message = '') {
   pendingEntry = null;
   clearTimeout(entryRecoveryTimer);
   state.authenticated = false;
+  state.catalogAvailable = false;
+  state.catalogRevision = null;
+  state.catalogAgents = [];
   ++state.scopeVersion;
   workspaceClient?.stop();
   clearTimeout(state.pendingTimer);
@@ -1533,6 +1666,7 @@ async function enterWorkspace(session) {
 
 async function completeWorkspaceEntry(serial) {
   try {
+    if (workspaceClient && typeof workspaceClient.catalogRequest === 'function') await refreshCatalogPermissions();
     // Refresh untouched public defaults once on entry. Ordinary GETs still use
     // local views; private role edits and all existing conversations are kept.
     const initial = workspaceClient
@@ -1635,8 +1769,8 @@ async function refreshLocalView() {
 
 const guideSteps = [
   { title: '先选一个想聊的角色', target: 'agent-select', copy: '点左上角的 Agent 打开角色图鉴。八位角色都能选择；在「角色概览」了解设定，在「提示词原文」查看实际使用的提示词。', note: '可以随时换角色，每位角色分别保存与你的记忆。' },
-  { title: '也可以创造自己的角色', target: 'new-agent', copy: '点击「创建角色」，只需填写名称和角色设定。设定里可以写身份、性格、说话方式，以及你希望它怎样陪你聊天。', note: '新建或编辑角色只影响当前浏览器，不会改动其他访客的角色。' },
-  { title: '让角色认识你', target: 'new-child', copy: '右上角可以创建用户资料，填写名字、年龄与兴趣。接着就能聊天；点「新会话」开启下一段，旧会话记录仍可查看。', note: '默认使用匿名访客。年龄可留空；需要成年年龄的角色会提示补充资料。停聊约 15 分钟后，会在下次打开或页面仍开着时整理记忆。' },
+  { title: '也可以创造自己的角色', target: 'new-agent', copy: '点击「创建角色」，只需填写名称和角色设定。创建后会直接公开，大家都能在角色图鉴里选择并聊天。', note: '自己创建的公共角色可以编辑、删除。管理凭证保存在创建时的浏览器，保留网站数据才能继续管理；旧的本机角色不会自动公开。' },
+  { title: '让角色认识你', target: 'new-child', copy: '右上角可以创建用户资料，填写名字、年龄与兴趣。接着就能聊天；点「新会话」开启下一段，旧会话记录仍可查看。', note: '默认提供22岁的访客测试资料。停聊约15分钟后，会在下次打开或页面仍开着时整理记忆。每个人的对话与记忆各自保存在浏览器里。' },
   { title: '记忆留在你的浏览器', target: 'memory-panel', copy: '右侧可以查看记忆和用户概括。「清空记忆」只清理当前用户与角色的记忆，聊天记录会保留。左侧显示每轮实际送给模型的内容。', note: '共享口令不是账户。换设备、换浏览器不会同步；清理网站数据会丢失记录。请求处理时会临时发送工作区资料给服务端，不写入服务器用户数据库。请自行保留重要信息。' },
 ];
 let guideIndex = 0;
@@ -1736,6 +1870,9 @@ el('recovery-restore').addEventListener('click', async () => {
     const recovered = recoveryData?.outbox;
     if (recovered?.body) {
       const scope = recovered.body;
+      if (!state.agents.some(item => item.id === scope.agentId) || !state.children.some(item => item.id === scope.childId)) {
+        throw new Error('原角色或用户已移除。未发送内容仍保留在此窗口和本机，请先复制需要的内容。');
+      }
       if (state.agents.some(item => item.id === scope.agentId) && state.children.some(item => item.id === scope.childId) &&
           (state.agentId !== scope.agentId || state.childId !== scope.childId || state.sessionId !== scope.sessionId)) {
         state.agentId = scope.agentId;

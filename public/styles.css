@@ -593,3 +593,10 @@ body:not(.entrance-active) .stage { height: min(1040px, max(520px, calc(100dvh -
   .chat-panel { height: max(380px, calc(100dvh - 187px)); }
 }
 @media (prefers-reduced-motion: no-preference) { .entrance-card { animation: workspace-enter 480ms var(--ease) both; } }
+.agent-editor-note { color: #6b756f; font-size: 13px; line-height: 1.7; }
+.gallery-definition-heading .gallery-definition-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.gallery-source-label { margin: 0 0 10px; color: #73806f; font-size: 12px; }
+.gallery-definition-actions .gallery-delete-button { color: #9b4841; }
+.danger-button { background: #9b4841; color: #fff; }
+#agent-delete-dialog { max-width: 460px; padding: 28px; }
+#agent-delete-copy { line-height: 1.7; }

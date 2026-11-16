@@ -1,6 +1,6 @@
 # 全Agent轻量聊天实验台
 
-用于体验角色聊天、工具调用与长期记忆的轻量实验台，面向任意 SOUL 与年龄段。当前封版为 **1.2.0**（分支 `version1.2.0`，标签 `v1.2.0`）：共享口令进入、浏览器本地数据、首次引导和记忆清空。基于 Node.js 24 原生 HTTP / SQLite 与原生浏览器 API，无第三方 Node 包依赖。
+用于体验角色聊天、工具调用与长期记忆的轻量实验台，面向任意 SOUL 与年龄段。当前开发分支 `feature/public-role-library` 在 **1.2.0** 封版基础上增加“创建即公开”的角色库与创建者管理；原封版保留在 `version1.2.0` / `v1.2.0`。基于 Node.js 24 原生 HTTP / SQLite 与原生浏览器 API，无第三方 Node 包依赖。
 
 默认公开体验模式中，个人资料、自己创建的角色、聊天、记忆及用量保存在当前浏览器的 IndexedDB。后台只在请求期间用内存 SQLite 复用现有聊天与记忆逻辑，结束后释放，不建立访客用户数据库。默认8位角色来自公开配置，提供22岁的“访客”测试资料，不读取开发者原有数据库。旧版未填写年龄且未编辑的初始访客会更新为22岁，其他用户的年龄保持原值。
 
@@ -9,7 +9,7 @@
 需要 Node.js 24 或更新版本。获取封版代码后启动：
 
 ```sh
-git clone --branch version1.2.0 https://github.com/SuperareLabs/chat-lab.git
+git clone --branch feature/public-role-library https://github.com/SuperareLabs/chat-lab.git
 cd chat-lab
 cp .env.example .env
 # 编辑 .env，填写自己的 CHAT_ACCESS_PASSWORD 与 ARK_API_KEY
@@ -23,11 +23,12 @@ npm start
 ## 页面使用
 
 1. 输入共享进入密码。首次进入会展示可跳过的4步引导；之后可用“使用指南”重开。
-2. 左上角选择 Agent，查看形象、完整角色设定与实际提示词。创建角色只填“名称”和“角色设定”。
-3. 右上角选择或创建个人资料、选择会话或开启新会话。新浏览器只有匿名“访客”，不会带入开发者的测试用户。
+2. 左上角选择 Agent，查看形象、完整角色设定与实际提示词。创建角色只填“名称”和“角色设定”，保存后即进入公共库，其他访客可以聊天。创建者可编辑或删除，管理凭证保存在创建者浏览器。原有本机角色不会自动公开，系统角色的本机编辑仍只属于自己。
+3. 右上角选择或创建个人资料、选择会话或开启新会话。新浏览器提供22岁的“访客”测试资料，不会带入开发者的测试用户。
 4. 中间聊天，左侧查看当前模型上下文与工具，右侧查看用户概括、记忆摘要和详情。输入框下方显示上下文、token和费用估算。
 5. 右侧“清空记忆”默认只清当前用户×当前 Agent：包括概括、学习到的画像、活跃/归档/撤回记忆及旧整理上下文。确认后自动打开干净的新会话；基础个人资料、其他作用域和历史聊天保留。
 6. 退出只结束进入凭证，本地记录保留；重新输入密码后继续使用。服务重启后需要重新输入密码，本地数据不受影响。
+7. 自己创建的角色可在角色图鉴管理并删除。公共角色删除后全员下架；已有聊天和记忆不级联删除。系统角色不能删除，其他人的公共角色只能查看和聊天。
 
 ## 本地保存的边界
 
@@ -44,6 +45,7 @@ npm start
 | --- | --- |
 | `CHAT_ACCESS_PASSWORD` | 公开体验入口口令，必须在服务器配置。 |
 | `CHAT_STORAGE_MODE` | 默认 `browser`；`server` 为私有旧式 SQLite 模式，不用于这次公共体验部署。 |
+| `CHAT_CATALOG_PATH` | 公共角色SQLite，默认 `data/public-catalog.sqlite`；仅保存公共设定、修订与管理凭证哈希，必须与旧聊天数据库分开。测试可设 `:memory:`。 |
 | `CHAT_PUBLIC_ORIGIN` | 部署时填写确切外部 Origin，如 `https://chat.example.com`；多个值用逗号隔开，不带路径。 |
 | `CHAT_HOST` / `PORT` | 默认 `0.0.0.0` / `4333`。 |
 | `ARK_API_KEY` | 方舟 Key；不要提交到 Git。 |
@@ -60,7 +62,7 @@ npm start
 
 ## 部署准备
 
-本版已固定源码和本地验证结果，尚未部署公网。拿到域名后配置 `CHAT_PUBLIC_ORIGIN`，使用 HTTPS 反向代理并保留正确 `Host`。不信任浏览器随意提交的 `X-Forwarded-*` 来放宽跨站校验。代理需支持流式SSE并关闭缓冲，完整示例和验证项见[公开体验架构](docs/browser-local-demo.md)。
+公网部署须配置精确的 `CHAT_PUBLIC_ORIGIN`；HTTPS反向代理保留正确 `Host`。不信任浏览器随意提交的 `X-Forwarded-*` 来放宽跨站校验。代理需支持流式SSE并关闭缓冲，完整示例和验证项见[公开体验架构](docs/browser-local-demo.md)。公共角色库放在代码发布目录外，部署新版本时保留该数据库，详见[公共角色库](docs/public-role-library.md)。
 
 发布只打包源码、公开默认角色与静态资源。不要打包整个开发工作目录、`.env`、`data/`、`verification/` 或未跟踪的私人音频。默认角色配置位于 `config/default-agents.json`，不包含个人资料、对话、记忆和私人参考音频。
 
@@ -76,6 +78,7 @@ npm start
 
 - [1.2.0 封版说明](docs/releases/v1.2.0.md)
 - [公开体验架构与部署准备](docs/browser-local-demo.md)
+- [公共角色库与创建者管理](docs/public-role-library.md)
 - [原聊天、工具与记忆架构](docs/architecture.md)
 - [角色提示词编写方向](docs/character-prompt-direction.md)
 - [已知限制](docs/known-limitations.md)

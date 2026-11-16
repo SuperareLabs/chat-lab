@@ -62,6 +62,129 @@ async function client(f, initial = null) {
     newSession() { return send('POST', '/api/sessions', scope); } };
 }
 
+function sharedCatalog() {
+  const data = { revision: 1, agents: [{ id: 'shared-chat-role', name: '大家的搭子', definition: '短句自然接话。',
+    revision: 1, version: 'public-v1', createdAt: '2026-11-15T02:00:00.000Z', updatedAt: '2026-11-15T02:00:00.000Z',
+    metadata: { publicCatalog: true, publicRevision: 1 } }], deletedIds: [] };
+  return { data, list() { return structuredClone(data); } };
+}
+
+test('public roles synchronize across browsers while their conversations and memories remain independent', async () => {
+  const catalog = sharedCatalog(), f = fixture({ catalog }), a = await client(f), b = await client(f);
+  const id = catalog.data.agents[0].id;
+  assert.equal(a.state.agents.find(agent => agent.id === id).publicCatalog, true);
+  assert.equal(b.state.agents.find(agent => agent.id === id).definition, catalog.data.agents[0].definition);
+  a.select({ ...a.scope, agentId: id }); b.select({ ...b.scope, agentId: id });
+  await a.chat('我每周末独自练习吉他。'); await a.newSession();
+  assert.equal(a.snapshot.tables.memories.length, 1);
+  const other = await b.send('GET', '/api/state');
+  assert.equal(other.snapshot.tables.memories.length, 0);
+  assert.equal(other.snapshot.tables.messages.length, 0);
+  const before = structuredClone(a.snapshot);
+  const publicRole = catalog.data.agents[0];
+  Object.assign(publicRole, { name: '改名后的公共搭子', definition: '新的公共角色设定。', revision: 2, version: 'public-v2', updatedAt: '2026-11-15T02:30:00.000Z' });
+  publicRole.metadata.publicRevision = 2; catalog.data.revision++;
+  const incoming = structuredClone(before);
+  const forged = incoming.tables.agents.find(agent => agent.id === id);
+  forged.definition = '这段客户端文本不能替换公共角色。';
+  const metadata = JSON.parse(forged.metadata); metadata.legacySoul = { schemaVersion: 1 }; forged.metadata = JSON.stringify(metadata);
+  const result = await f.workspace.execute({ method: 'GET', path: '/api/state', snapshot: incoming });
+  const shown = result.value.agents.find(agent => agent.id === id);
+  assert.equal(shown.definition, publicRole.definition); assert.equal(shown.name, publicRole.name); assert.equal(shown.revision, 2);
+  assert.equal(JSON.parse(result.snapshot.tables.agents.find(agent => agent.id === id).metadata).legacySoul, undefined);
+  for (const [table, rows] of Object.entries(before.tables)) if (table !== 'agents') assert.deepEqual(result.snapshot.tables[table], rows, table);
+  assert(result.invalidates.includes('/api/agents'));
+  const rejected = await a.send('PATCH', '/api/agents/' + id, { name: '错误编辑入口', definition: '不可更改公共库。', revision: 2 });
+  assert.equal(rejected.status, 403);
+  const created = await a.send('POST', '/api/agents', { name: '错误创建入口', definition: '刷新后才可创建公开角色。' });
+  assert.equal(created.status, 409);
+});
+
+test('public deletion retires stale snapshots without deleting history and blocks further chats and sessions', async () => {
+  const catalog = sharedCatalog(), f = fixture({ catalog }), a = await client(f), id = catalog.data.agents[0].id;
+  a.select({ ...a.scope, agentId: id });
+  await a.chat('我每周末练习吉他。'); const sessionId = a.snapshot.tables.sessions.find(row => row.agent_id === id).id;
+  await a.newSession(); const before = structuredClone(a.snapshot), chatCalls = f.calls.chat.length;
+  catalog.data.agents = []; catalog.data.deletedIds = [id]; catalog.data.revision++;
+  const result = await a.send('GET', '/api/state');
+  assert(!result.value.agents.some(agent => agent.id === id));
+  assert.equal(JSON.parse(result.snapshot.tables.agents.find(agent => agent.id === id).metadata).hidden, true);
+  assert.deepEqual(result.snapshot.tables.messages, before.tables.messages);
+  assert.deepEqual(result.snapshot.tables.memories, before.tables.memories);
+  assert.equal((await a.chat('此角色已下架，不应该调用模型。')).status, 410);
+  assert.equal((await a.newSession()).status, 410);
+  assert.equal(f.calls.chat.length, chatCalls);
+  assert.equal((await a.memory()).value.items.length, 1);
+  const history = await a.send('GET', '/api/sessions/' + sessionId + query(a.scope));
+  assert.equal(history.value.messages[0].text, '我每周末练习吉他。');
+  const forged = structuredClone(before), row = forged.tables.agents.find(agent => agent.id === id);
+  row.metadata = JSON.stringify({ publicCatalog: true, hidden: false, publicDeleted: false });
+  const retry = await f.workspace.execute({ method: 'POST', path: '/api/chat', snapshot: forged,
+    body: { ...a.scope, text: '伪造标记不能复活已下架角色。', requestId: 'retired-role-attempt' } });
+  assert.equal(retry.status, 410); assert.equal(f.calls.chat.length, chatCalls);
+  assert.equal(JSON.parse(retry.snapshot.tables.agents.find(agent => agent.id === id).metadata).hidden, true);
+  assert(!(await client(f)).state.agents.some(agent => agent.id === id));
+});
+
+test('local deletion is limited to legacy private roles and preserves their stored data', async () => {
+  const old = fixture(), a = await client(old);
+  const local = (await a.send('POST', '/api/agents', { name: '旧版私人角色', definition: '仅本机使用。' })).value.agent;
+  a.select({ ...a.scope, agentId: local.id });
+  await a.chat('我周末会练习吉他。'); await a.newSession();
+  const before = structuredClone(a.snapshot);
+  const catalog = sharedCatalog(), f = fixture({ catalog }), current = await client(f, before);
+  current.select(a.scope);
+  assert(!catalog.list().agents.some(agent => agent.id === local.id));
+  assert.equal(current.state.agents.find(agent => agent.id === local.id).publicCatalog, undefined);
+  assert.equal((await current.send('DELETE', '/api/agents/' + seeds[0].id, { revision: 1 })).status, 403);
+  assert.equal((await current.send('DELETE', '/api/agents/' + catalog.data.agents[0].id, { revision: 1 })).status, 403);
+  const result = await current.send('DELETE', '/api/agents/' + local.id, { revision: local.revision });
+  assert.equal(result.status, 200); assert.equal(result.value.deleted, true);
+  assert(!result.views['/api/state'].agents.some(agent => agent.id === local.id));
+  assert.deepEqual(result.snapshot.tables.messages, before.tables.messages);
+  assert.deepEqual(result.snapshot.tables.memories, before.tables.memories);
+  assert.equal((await current.send('DELETE', '/api/agents/' + local.id, { revision: local.revision })).status, 200);
+  assert.equal((await current.chat('删除后不再开始新的聊天。')).status, 410);
+});
+
+test('a public role ID collision rejects the request without taking over a private role', async () => {
+  const f = fixture(), a = await client(f);
+  const local = (await a.send('POST', '/api/agents', { name: '私人角色', definition: '保留这个定义。' })).value.agent;
+  const before = structuredClone(a.snapshot), catalog = sharedCatalog();catalog.data.agents[0].id = local.id;
+  const shared = createBrowserWorkspace({ ...f.config, catalog });
+  await assert.rejects(shared.execute({ method: 'GET', path: '/api/state', snapshot: before }), error => error.status === 409);
+  assert.deepEqual(a.snapshot, before);
+});
+
+test('a role retired during a model response is hidden in the final saved workspace', async () => {
+  const catalog = sharedCatalog(); let release, entered;
+  const started = new Promise(resolve => { entered = resolve; });
+  const blocked = new Promise(resolve => { release = resolve; });
+  const f = fixture({ catalog, provider: { async chat() {
+    entered(); await blocked; return { content: '已经完成的本轮回复。', toolCalls: [], receipt };
+  } } }), a = await client(f), id = catalog.data.agents[0].id;
+  a.select({ ...a.scope, agentId: id });
+  const pending = a.chat('开始之后才下架。'); await started;
+  catalog.data.agents = []; catalog.data.deletedIds = [id]; catalog.data.revision++;
+  release(); const result = await pending;
+  assert(result.events.some(event => event.type === 'done'));
+  assert(!result.views['/api/state'].agents.some(agent => agent.id === id));
+  assert.equal(result.snapshot.tables.messages.at(-1).text, '已经完成的本轮回复。');
+  assert.equal(JSON.parse(result.snapshot.tables.agents.find(agent => agent.id === id).metadata).hidden, true);
+});
+
+test('retired roles remain available to their already queued memory extraction', async () => {
+  const catalog = sharedCatalog(), f = fixture({ catalog }), a = await client(f), id = catalog.data.agents[0].id;
+  a.select({ ...a.scope, agentId: id }); await a.chat('每周末练习吉他。');
+  catalog.data.agents = []; catalog.data.deletedIds = [id]; catalog.data.revision++;
+  f.advance(15 * 60_000 + 1);
+  const result = await a.send('GET', '/api/state');
+  assert(!result.value.agents.some(agent => agent.id === id));
+  assert.equal(result.snapshot.tables.jobs.find(job => job.agent_id === id).status, 'succeeded');
+  assert.equal(result.snapshot.tables.memories.find(memory => memory.agent_id === id).summary, '用户每周末练习吉他。');
+  assert.equal(f.calls.memory.length, 1);
+});
+
 test('only the untouched initial visitor receives the adult demo age while memories and other profiles remain intact', async () => {
   const f = fixture(), a = await client(f);
   await a.chat('每周末练习吉他。');

@@ -116,3 +116,47 @@ test('external origins are explicit and forwarded headers cannot bypass host or 
   const defaultPort = await f.request('/api/auth/session', { headers: { Host: 'chat.example.test:443', Origin: 'https://chat.example.test' } });
   assert.equal(defaultPort.status, 200, 'default HTTPS port in a legitimate proxy Host is normalized');
 });
+
+test('public catalog is shared across entrance sessions but mutation belongs to the creating browser', async t => {
+  const f = await fixture(t);
+  const firstKey = 'c'.repeat(64), secondKey = 'd'.repeat(64);
+  assert.equal((await f.request('/api/catalog')).status, 401);
+  assert.equal((await f.request('/api/catalog/agents', { method: 'POST', body: {} })).status, 401);
+  const firstCookie = await f.login(), secondCookie = await f.login();
+  const firstHeaders = { 'X-Chat-Lab-Owner': firstKey }, secondHeaders = { 'X-Chat-Lab-Owner': secondKey };
+  const initial = await (await f.request('/api/catalog', { cookie: secondCookie })).json();
+  assert.equal(initial.revision, 0);
+  assert.deepEqual(initial.defaultAgentIds, ['public-guide']);
+  const createBody = { name: '大家的角色', definition: ' 按眼前的话自然回应。\n', requestId: 'shared-create-1' };
+  const deniedOrigin = await f.request('/api/catalog/agents', { cookie: firstCookie, method: 'POST', body: createBody,
+    headers: { ...firstHeaders, Origin: 'https://evil.example.test' } });
+  assert.equal(deniedOrigin.status, 403);
+  const createdResponse = await f.request('/api/catalog/agents', { cookie: firstCookie, method: 'POST', body: createBody, headers: firstHeaders });
+  assert.equal(createdResponse.status, 201);
+  const created = await createdResponse.json(), id = created.agent.id;
+  const again = await (await f.request('/api/catalog/agents', { cookie: firstCookie, method: 'POST', body: createBody, headers: firstHeaders })).json();
+  assert.equal(again.agent.id, id);
+  const visible = await (await f.request('/api/catalog', { cookie: secondCookie, headers: secondHeaders })).json();
+  assert.equal(visible.agents[0].id, id);
+  assert.equal(visible.agents[0].canManage, false);
+  assert(!JSON.stringify(visible).includes(firstKey));
+  assert.equal((await (await f.request('/api/catalog', { cookie: firstCookie, headers: firstHeaders })).json()).agents[0].canManage, true);
+  const unchanged = await (await f.request('/api/catalog?revision=1', { cookie: secondCookie, headers: secondHeaders })).json();
+  assert.deepEqual(unchanged, { revision: 1, unchanged: true });
+  for (const query of ['?revision=-1', '?revision=x', '?revision=9007199254740992', '?revision=1&revision=1', '?unknown=1']) {
+    assert.equal((await f.request('/api/catalog' + query, { cookie: secondCookie })).status, 400, query);
+  }
+  const edit = { name: '新版角色', definition: '新的设定。', revision: 1 };
+  assert.equal((await f.request('/api/catalog/agents/' + id, { cookie: secondCookie, method: 'PATCH', body: edit, headers: secondHeaders })).status, 403);
+  assert.equal((await f.request('/api/catalog/agents/' + id, { cookie: secondCookie, method: 'DELETE', body: { revision: 1 }, headers: secondHeaders })).status, 403);
+  assert.equal((await f.request('/api/catalog/agents/' + id, { cookie: firstCookie, method: 'PATCH', body: edit, headers: firstHeaders })).status, 200);
+  assert.equal((await f.request('/api/catalog/agents/' + id, { cookie: firstCookie, method: 'DELETE', body: { revision: 1 }, headers: firstHeaders })).status, 409);
+  assert.equal((await f.request('/api/catalog/agents/' + id, { cookie: firstCookie, method: 'DELETE', body: { revision: 2 }, headers: firstHeaders })).status, 200);
+  assert.equal((await f.request('/api/catalog/agents/' + id, { cookie: firstCookie, method: 'DELETE', body: { revision: 2 }, headers: firstHeaders })).status, 200);
+  const retired = await (await f.request('/api/catalog?revision=1', { cookie: secondCookie })).json();
+  assert.equal(retired.revision, 3);
+  assert.deepEqual(retired.agents, []);
+  assert.deepEqual(retired.deletedIds, [id]);
+  assert.equal(f.calls(), 0);
+  assert.equal(existsSync(f.dbPath), false);
+});

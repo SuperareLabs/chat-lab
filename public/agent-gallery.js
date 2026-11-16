@@ -31,7 +31,7 @@ function image(src, className, alt, fallback) {
   return node;
 }
 
-function renderCard(article, agent, avatar, onEdit) {
+function renderCard(article, agent, avatar, onEdit, onDelete) {
   const card = agent.card || {};
   const name = agent.name;
   const portrait = card.portrait || avatar;
@@ -66,10 +66,21 @@ function renderCard(article, agent, avatar, onEdit) {
   const definition = element('section', 'gallery-definition');
   const heading = element('div', 'gallery-definition-heading');
   heading.append(element('h4', 'gallery-definition-title', '角色设定'));
-  const edit = element('button', 'gallery-copy-button gallery-edit-button', '编辑角色');
-  edit.type = 'button';
-  edit.addEventListener('click', () => onEdit?.(agent.id));
-  heading.append(edit);
+  const actions = element('div', 'gallery-definition-actions');
+  if (agent.sourceLabel) definition.append(element('p', 'gallery-source-label', agent.sourceLabel));
+  if (agent.canEdit !== false) {
+    const edit = element('button', 'gallery-copy-button gallery-edit-button', '编辑角色');
+    edit.type = 'button';
+    edit.addEventListener('click', () => onEdit?.(agent.id));
+    actions.append(edit);
+  }
+  if (agent.canDelete === true) {
+    const remove = element('button', 'gallery-copy-button gallery-delete-button', '删除角色');
+    remove.type = 'button';
+    remove.addEventListener('click', () => onDelete?.(agent.id));
+    actions.append(remove);
+  }
+  heading.append(actions);
   const text = agent.definition || '';
   const copy = element('p', 'gallery-definition-copy', text || '暂无角色设定。');
   definition.append(heading, copy);
@@ -129,7 +140,7 @@ function parseGalleryRoute(hash) {
   return { agentId, view: match[2] ? 'prompt' : 'overview' };
 }
 
-export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarFor, onSelect, onCreate, onEdit, getDataVersion = () => '', requestJSON }) {
+export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarFor, onSelect, onCreate, onEdit, onDelete, getDataVersion = () => '', requestJSON }) {
   const dialog = document.getElementById('agent-gallery');
   const closeButton = document.getElementById('agent-gallery-close');
   const createButton = document.getElementById('agent-gallery-create');
@@ -294,7 +305,7 @@ export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarF
     if (!agent) return;
     const changed = previewId !== id;
     previewId = id;
-    renderCard(article, agent, avatarFor(agent), agentId => { close(); void onEdit?.(agentId); });
+    renderCard(article, agent, avatarFor(agent), agentId => { close(); void onEdit?.(agentId); }, agentId => { close(); void onDelete?.(agentId); });
     observeDiagram();
     for (const button of roster.children) button.setAttribute('aria-pressed', String(button.dataset.agentId === previewId));
     const isSelected = id === getSelectedId();
