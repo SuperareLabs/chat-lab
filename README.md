@@ -1,15 +1,17 @@
 # 全Agent轻量聊天实验台
 
-用于体验角色聊天、工具调用与长期记忆的轻量实验台，面向任意 SOUL 与年龄段。当前开发分支 `feature/public-role-library` 在 **1.2.0** 封版基础上增加“创建即公开”的角色库与创建者管理；原封版保留在 `version1.2.0` / `v1.2.0`。基于 Node.js 24 原生 HTTP / SQLite 与原生浏览器 API，无第三方 Node 包依赖。
+用于体验角色聊天、工具调用与长期记忆的轻量实验台，面向任意 SOUL 与年龄段。当前维护版本为 **1.2.0**，使用 `version1.2.0` 分支，已包含创建即公开、创建者编辑与删除、默认林小满和22岁访客。线上入口：[聊天实验台](http://8.137.116.27:9988/)。基于 Node.js 24 原生 HTTP / SQLite 与原生浏览器 API，无第三方 Node 包依赖。
 
-默认公开体验模式中，个人资料、自己创建的角色、聊天、记忆及用量保存在当前浏览器的 IndexedDB。后台只在请求期间用内存 SQLite 复用现有聊天与记忆逻辑，结束后释放，不建立访客用户数据库。默认8位角色来自公开配置，提供22岁的“访客”测试资料，不读取开发者原有数据库。旧版未填写年龄且未编辑的初始访客会更新为22岁，其他用户的年龄保持原值。
+`version1.2.0` 是持续更新的维护分支；`v1.2.0` 标签仍指向最初的 `358e6ef` 封版快照，不包含之后的公共角色库功能。当前线上运行功能提交为 `1bd1cf7`，本分支在相同运行代码上同步维护文档。
+
+默认公开体验模式中，个人资料、私人角色、聊天、记忆、草稿及用量保存在当前浏览器的 IndexedDB。新建公共角色的名称与设定保存在服务器独立角色库，创建者管理凭证保存在创建者浏览器；旧本机角色不会自动公开。后台只在请求期间用内存 SQLite 执行聊天与记忆逻辑，不建立持久访客聊天或记忆数据库。默认8位角色来自公开配置，提供22岁的“访客”测试资料，不读取开发者原有数据库。旧版未填写年龄且未编辑的初始访客会更新为22岁，其他用户的年龄保持原值。
 
 ## 本地启动
 
-需要 Node.js 24 或更新版本。获取封版代码后启动：
+需要 Node.js 24 或更新版本。获取维护分支代码后启动：
 
 ```sh
-git clone --branch feature/public-role-library https://github.com/SuperareLabs/chat-lab.git
+git clone --branch version1.2.0 https://github.com/SuperareLabs/chat-lab.git
 cd chat-lab
 cp .env.example .env
 # 编辑 .env，填写自己的 CHAT_ACCESS_PASSWORD 与 ARK_API_KEY
@@ -62,6 +64,8 @@ npm start
 
 ## 部署准备
 
+当前线上使用单个 `chat-lab.service`，Node.js 24.22.3 监听 `0.0.0.0:9988`，配置 `CHAT_PUBLIC_ORIGIN=http://8.137.116.27:9988`。公共角色库固定在 `/var/lib/chat-lab/public-catalog.sqlite`，口令和API Key只在服务器外部环境文件中保存。实际目录、systemd配置、备份与更新步骤见[部署说明](docs/deployment.md)。
+
 公网部署须配置精确的 `CHAT_PUBLIC_ORIGIN`；HTTPS反向代理保留正确 `Host`。不信任浏览器随意提交的 `X-Forwarded-*` 来放宽跨站校验。代理需支持流式SSE并关闭缓冲，完整示例和验证项见[公开体验架构](docs/browser-local-demo.md)。公共角色库放在代码发布目录外，部署新版本时保留该数据库，详见[公共角色库](docs/public-role-library.md)。
 
 发布只打包源码、公开默认角色与静态资源。不要打包整个开发工作目录、`.env`、`data/`、`verification/` 或未跟踪的私人音频。默认角色配置位于 `config/default-agents.json`，不包含个人资料、对话、记忆和私人参考音频。
@@ -78,6 +82,7 @@ npm start
 
 - [1.2.0 封版说明](docs/releases/v1.2.0.md)
 - [公开体验架构与部署准备](docs/browser-local-demo.md)
+- [当前线上部署与更新说明](docs/deployment.md)
 - [公共角色库与创建者管理](docs/public-role-library.md)
 - [原聊天、工具与记忆架构](docs/architecture.md)
 - [角色提示词编写方向](docs/character-prompt-direction.md)

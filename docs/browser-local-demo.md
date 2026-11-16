@@ -1,10 +1,10 @@
 # 浏览器本地公开体验架构
 
-版本：应用1.2.0，封版分支 `version1.2.0`，标签 `v1.2.0`。源码已固定，公网地址尚未配置。
+版本：应用1.2.0，当前维护分支 `version1.2.0`。已部署至 http://8.137.116.27:9988/ ，运行功能提交 `1bd1cf7`；实际配置与更新步骤见[部署说明](deployment.md)。`v1.2.0` 标签保留最初 `358e6ef` 历史封版。
 
 ## 请求与持久化
 
-浏览器保存一个IndexedDB工作区：固定JSON数据快照、界面读取缓存、当前选择、首次引导状态、草稿和各标签页的未完成发送。默认配置提供8个公开角色和22岁的“访客”测试资料。自建角色、资料、历史与记忆仅属于该浏览器。旧版初始访客仅在年龄为空、其余基础字段未改动时更新为22岁；已有明确年龄及自建资料保留，历史与记忆不重置。
+浏览器保存一个IndexedDB工作区：固定JSON数据快照、界面读取缓存、当前选择、首次引导状态、草稿和各标签页的未完成发送。默认配置提供8个内置角色和22岁的“访客”测试资料。用户资料、私人角色、历史与记忆属于该浏览器；新建公共角色的设定由服务器角色库共享，管理凭证留在创建者浏览器。旧版初始访客仅在年龄为空、其余基础字段未改动时更新为22岁；已有明确年龄及自建资料保留，历史与记忆不重置。
 
 服务启动公开模式时不构造全局ChatStore/ChatRuntime，不打开CHAT_DB_PATH。`/api/local`收到认证请求后，严格校验固定表、列、类型、引用、路径及大小，在`:memory:`中导入本次快照，通过原ChatRuntime执行操作；等待后台任务结束，再导出快照并释放运行器。没有服务器用户工作区文件或访客日志。公共角色库单独使用 `CHAT_CATALOG_PATH` 持久保存公开设定与管理凭证哈希，不存访客聊天或记忆；创建、编辑、下架及同步见[公共角色库](public-role-library.md)。
 
@@ -53,7 +53,7 @@ location / {
 
 还需在代理的HTTPS站点配置证书；本例只是location内容。17m用于容纳16 MiB快照及请求封装。`proxy_request_buffering off`关闭代理请求体缓冲；`proxy_buffering off`关闭SSE响应缓冲。代理/CDN的请求日志、缓存和临时文件策略需另外核对，不能把应用自身不落盘理解为所有代理都不会留存。Shared gate不提供独立账户、跨设备同步或逐账户配额。登录失败按连接IP限流，同机代理可能使限流影响所有新登录，应在正式部署时一起核对。
 
-公开模式不依赖原本data/chat.sqlite，发布也不得复制它。不要把开发目录中未跟踪的private voice资源一并打包。共享角色库由config/default-agents.json版本管理，个人编辑保存在本地快照。
+公开模式不依赖原本data/chat.sqlite，发布也不得复制它。不要把开发目录中未跟踪的private voice资源一并打包。内置角色由config/default-agents.json版本管理；新建公共角色在独立公共SQLite中持久化；系统角色的私人编辑和旧本机角色保存在本地快照。
 
 ## 默认角色的小版本更新
 
@@ -61,6 +61,6 @@ location / {
 
 ## 验证依据
 
-自动测试使用mock provider，不调用真实模型。覆盖密码/会话/退出、Host与Origin、无持久DB、双快照隔离、SSE最终保存、15分钟整理、单任务限额、归档回忆、清空和晚到响应、首次恢复与草稿。浏览器实测覆盖入口、四步引导、8角色、新建资料/角色、模拟聊天/记忆、刷新恢复、清记忆取消/确认、退出重入、多标签和不同origin独立存储。窄窗口仅有CSS适配，尚未单独完成人工尺寸验收。
+当前273项自动测试使用mock provider，不调用真实模型。覆盖密码/会话/退出、Host与Origin、无持久访客工作区DB、公共角色库持久化与创建者权限、双快照隔离、SSE最终保存、15分钟整理、单任务限额、归档回忆、清空和晚到响应、首次恢复与草稿。浏览器实测覆盖入口、四步引导、8角色、新建资料/角色、模拟聊天/记忆、刷新恢复、清记忆取消/确认、退出重入、多标签、跨origin公开角色的创建/编辑/删除，以及独立聊天记录。另已完成一轮线上公共角色真实聊天验收。窄窗口仅有CSS适配，尚未单独完成人工尺寸验收。
 
 实现参考：[Node crypto](https://nodejs.org/api/crypto.html)、[MDN Cookie属性](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie)、[MDN IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API)、[Nginx请求体缓冲](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_request_buffering)、[Nginx请求大小](https://nginx.org/en/docs/http/ngx_http_core_module.html#client_max_body_size)。文档描述的是应用自身的数据存储；模型提供商的处理政策单独适用。
