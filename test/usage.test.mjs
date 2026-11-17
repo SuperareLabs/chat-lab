@@ -169,7 +169,7 @@ test('failed searches preserve a known plugin fee even if the model usage was no
 
 test('memory extraction is associated with its archived session and remains separate from new-session context', async t => {
   const f = await fixture(t, { async chat(options) {
-    if (options.responseFormat) return response(JSON.stringify({
+    if (options.responseFormat && options.responseFormat.type !== 'json_object') return response(JSON.stringify({
       creates: [], updates: [], mentions: [], retractions: [], overview: null,
     }), 400, 20);
     return response('在。', 1000, 10);

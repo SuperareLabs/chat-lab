@@ -9,7 +9,7 @@ test('two invalid source responses are logged without writes and only an explici
   const gate = new Promise(resolve => { release = resolve; });
   t.after(release);
   const lab = createLabServer({ souls: loadSouls(), dbPath: ':memory:', provider: { async chat(options) {
-    assert.equal(options.responseFormat, undefined, 'chat provider does not perform memory work');
+    assert.equal(options.responseFormat.type, 'json_object', 'chat provider does not perform memory work');
     return { content: '好，小禾。', toolCalls: [], receipt: { finish_reason: 'stop' } };
   } }, memoryModel: { name: 'separate-memory-model', configured: true, mode: 'test' }, memoryProvider: { async chat(options) {
     assert(options.responseFormat, 'memory provider only performs extraction');

@@ -175,7 +175,7 @@ test('an acknowledgement alone cannot finish a tool turn when the model returns 
   assert.equal(stream.events.filter(event => event.type === 'reply_part').length, 1);
   const run = f.lab.store.sql('SELECT status, error FROM runs').get();
   assert.equal(run.status, 'failed');
-  assert.match(run.error, /没有返回本轮操作的结果/);
+  assert.match(run.error, /回复格式不完整/);
 });
 
 test('parts schema migration preserves old text and keeps multipart replies across a same-version restart', async t => {

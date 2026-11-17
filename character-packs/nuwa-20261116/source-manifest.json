@@ -1,0 +1,306 @@
+{
+  "commit": "73b6f2d048c4b06aafd45fc16026c01b7277fd78",
+  "files": [
+    {
+      "sourcePath": "examples/feynman-perspective/SKILL.md",
+      "path": "character-packs/nuwa-20261116/upstream/feynman-perspective/SKILL.md",
+      "gitBlob": "8d68745e37ac1a3cf22eb8801ad67722c52c7b6d",
+      "size": 28201,
+      "sha256": "3aa96eb60bfa2da5f7376a7d02bb0bc2a71ee07b6b613c585da763e95bb6a519"
+    },
+    {
+      "sourcePath": "examples/feynman-perspective/references/research.md",
+      "path": "character-packs/nuwa-20261116/upstream/feynman-perspective/references/research.md",
+      "gitBlob": "13cbbaaaeaf99bedbbae5ab91aa8fa7e51bf1615",
+      "size": 3785,
+      "sha256": "1a85b01a3317db7e887b4c2105f368e628c791cf8f11cf173d8b37f64dc605d7"
+    },
+    {
+      "sourcePath": "examples/feynman-perspective/references/费曼外部评价调研.md",
+      "path": "character-packs/nuwa-20261116/upstream/feynman-perspective/references/费曼外部评价调研.md",
+      "gitBlob": "b7561018e2ed093971f083f1441d311f54cacabc",
+      "size": 16683,
+      "sha256": "894818139a1e7d5e64dc36316a1b3b8fcb73917c28123b87055aed3567eff3a3"
+    },
+    {
+      "sourcePath": "examples/feynman-perspective/references/费曼著作与系统思考调研-20260404.md",
+      "path": "character-packs/nuwa-20261116/upstream/feynman-perspective/references/费曼著作与系统思考调研-20260404.md",
+      "gitBlob": "a17dca27c273a1c6f734828f988e241450abe5cd",
+      "size": 16807,
+      "sha256": "fa1a36fd132467f14da2ea0886d13c47b06be962d5fa74733841ec80b1e842c4"
+    },
+    {
+      "sourcePath": "examples/feynman-perspective/references/费曼表达风格调研.md",
+      "path": "character-packs/nuwa-20261116/upstream/feynman-perspective/references/费曼表达风格调研.md",
+      "gitBlob": "66b7dae8e5118bae01b6724c64e22b8f98fd6a0c",
+      "size": 14116,
+      "sha256": "5beb788e9b5f92e7cce4e28712502702b9ceff02bbad1ef5b991c0a619d1b8af"
+    },
+    {
+      "sourcePath": "examples/feynman-perspective/references/费曼重大决策调研-20260404.md",
+      "path": "character-packs/nuwa-20261116/upstream/feynman-perspective/references/费曼重大决策调研-20260404.md",
+      "gitBlob": "f4f2cd078d95d4d0bbdb1bd19b41393e4387363f",
+      "size": 18000,
+      "sha256": "5d53326e6a3f75c09141f10a929b2f9a17067d73bd7dbe76b550c6fdb7279503"
+    },
+    {
+      "sourcePath": "examples/feynman-perspective/references/费曼长对话与即兴思考方式调研-20260404.md",
+      "path": "character-packs/nuwa-20261116/upstream/feynman-perspective/references/费曼长对话与即兴思考方式调研-20260404.md",
+      "gitBlob": "418af00abb4b630952bf7862716f1c777660189c",
+      "size": 17651,
+      "sha256": "e53447988a2464aa4117e4b7eeeace9a1677ea0aa5f5856c898eaf1315bd9c8f"
+    },
+    {
+      "sourcePath": "examples/munger-perspective/SKILL.md",
+      "path": "character-packs/nuwa-20261116/upstream/munger-perspective/SKILL.md",
+      "gitBlob": "f9c62162a359e1857a9b11d51636672674fb5267",
+      "size": 28993,
+      "sha256": "24b2ddc3a2d58f5f89938a823823462e45e22e93a2bdc02f91fe40aa98932cab"
+    },
+    {
+      "sourcePath": "examples/munger-perspective/references/25-biases.md",
+      "path": "character-packs/nuwa-20261116/upstream/munger-perspective/references/25-biases.md",
+      "gitBlob": "d17f178482089b19432427fb81bb2fa309a714a2",
+      "size": 2080,
+      "sha256": "abfbac07b980a97c55ceebe63cdd1621de3503d304e304bdb5d0bbce8fe502c0"
+    },
+    {
+      "sourcePath": "examples/munger-perspective/references/casebook.md",
+      "path": "character-packs/nuwa-20261116/upstream/munger-perspective/references/casebook.md",
+      "gitBlob": "513dc1de80e28f62816135b47d6fc5e56ef5bd77",
+      "size": 25075,
+      "sha256": "60b7ef09edef4ab45e6f2f7ac3e27ae86279aca2d960227a5d10fec99be7706b"
+    },
+    {
+      "sourcePath": "examples/munger-perspective/references/research/00-prior.md",
+      "path": "character-packs/nuwa-20261116/upstream/munger-perspective/references/research/00-prior.md",
+      "gitBlob": "a955a5315a9b2bfe5a2ff7c3e381c1bfa74f44cc",
+      "size": 3036,
+      "sha256": "5a481709f0bd19b37000cd8c4f8afbf8d8b7a7432a947425f1ec33d093fa345f"
+    },
+    {
+      "sourcePath": "examples/munger-perspective/references/research/01-writings.md",
+      "path": "character-packs/nuwa-20261116/upstream/munger-perspective/references/research/01-writings.md",
+      "gitBlob": "a491c6e5f7abce521a4b348dad4fc980c8f94d5f",
+      "size": 5377,
+      "sha256": "2cf286c3649da3fbf2ef52055cf28834d2eabeae274ddc57ae53faad37d3c5ab"
+    },
+    {
+      "sourcePath": "examples/munger-perspective/references/research/02-conversations.md",
+      "path": "character-packs/nuwa-20261116/upstream/munger-perspective/references/research/02-conversations.md",
+      "gitBlob": "1ed2465c92ad5dd494f93f4ef2f05bcb24ae5bd4",
+      "size": 4481,
+      "sha256": "cfcee287ca76eae1c2972ce286376c143bdcbe73636b776c6d2db1dc04cc8cee"
+    },
+    {
+      "sourcePath": "examples/munger-perspective/references/research/03-expression-dna.md",
+      "path": "character-packs/nuwa-20261116/upstream/munger-perspective/references/research/03-expression-dna.md",
+      "gitBlob": "4e7af771f9c6cc32b30c40b71f47ab9906d568c1",
+      "size": 2601,
+      "sha256": "bda55c3229c2848f857cac4305a2260f47ea763edf49cc1be9e62ebc498325b1"
+    },
+    {
+      "sourcePath": "examples/munger-perspective/references/research/04-external-views.md",
+      "path": "character-packs/nuwa-20261116/upstream/munger-perspective/references/research/04-external-views.md",
+      "gitBlob": "df94e126269f1ebb04cfd34f1135fd588e11fe14",
+      "size": 3891,
+      "sha256": "88e3beae3be32fa3eebe1bcef79e33da775ab17c77731011d2e20e140dbf0e62"
+    },
+    {
+      "sourcePath": "examples/munger-perspective/references/research/05-decisions.md",
+      "path": "character-packs/nuwa-20261116/upstream/munger-perspective/references/research/05-decisions.md",
+      "gitBlob": "6b05dd50b2a9b4036e2a30dae527d5ea70253d27",
+      "size": 22449,
+      "sha256": "773b7117493d5b999c8f181d5ccb020c8a474a27afe1d5e2a2c992b9ce257c55"
+    },
+    {
+      "sourcePath": "examples/munger-perspective/references/research/06-timeline.md",
+      "path": "character-packs/nuwa-20261116/upstream/munger-perspective/references/research/06-timeline.md",
+      "gitBlob": "319af563e80276bb594e1900f8046a8535a75673",
+      "size": 3799,
+      "sha256": "9b5623e2943f08f93ca414b49fe6c918b1c66c3c1cb7d7a8524819993b55a8e5"
+    },
+    {
+      "sourcePath": "examples/munger-perspective/references/voice.md",
+      "path": "character-packs/nuwa-20261116/upstream/munger-perspective/references/voice.md",
+      "gitBlob": "291626e37b025551cf56fa4c9f1668cf5e4c4ef4",
+      "size": 11469,
+      "sha256": "5e507f56848e15df6fc8fcdd9596c9ba69501c5a53fe3285ffe2e0528f3b46e6"
+    },
+    {
+      "sourcePath": "examples/steve-jobs-perspective/SKILL.md",
+      "path": "character-packs/nuwa-20261116/upstream/steve-jobs-perspective/SKILL.md",
+      "gitBlob": "f1f37b47a066ee31e35f0e45df353cceb66d715d",
+      "size": 30554,
+      "sha256": "88a45d1cac7bf403a4d69e9884a031cec1fcbf5c24768d8c2b7510de25361fa7"
+    },
+    {
+      "sourcePath": "examples/steve-jobs-perspective/references/casebook.md",
+      "path": "character-packs/nuwa-20261116/upstream/steve-jobs-perspective/references/casebook.md",
+      "gitBlob": "2fca3a8c698e88e93e4247f58139d53d9061d725",
+      "size": 26627,
+      "sha256": "845cc38fdf6f1001ec98bc11a0cedc0ecec2d61fe0024e1a1921e064b78a70fd"
+    },
+    {
+      "sourcePath": "examples/steve-jobs-perspective/references/research/00-prior.md",
+      "path": "character-packs/nuwa-20261116/upstream/steve-jobs-perspective/references/research/00-prior.md",
+      "gitBlob": "b987d394984874a502324bbcd1d6b6780a884671",
+      "size": 2612,
+      "sha256": "566cf8e9a034f51bbafddd06f503a11386e3f64a7a0c68c982c5e37d0178545f"
+    },
+    {
+      "sourcePath": "examples/steve-jobs-perspective/references/research/01-writings.md",
+      "path": "character-packs/nuwa-20261116/upstream/steve-jobs-perspective/references/research/01-writings.md",
+      "gitBlob": "0185cac9740ea8b0710f80bdd3a4c13e4f30f9ba",
+      "size": 21523,
+      "sha256": "d0c92d4fb52e1cfca373e6cf1baac1bb90de93607a02b83eb46c8bb59e7683e4"
+    },
+    {
+      "sourcePath": "examples/steve-jobs-perspective/references/research/02-conversations.md",
+      "path": "character-packs/nuwa-20261116/upstream/steve-jobs-perspective/references/research/02-conversations.md",
+      "gitBlob": "0b4dc7e82def476a914953946b13122e88d7e03c",
+      "size": 29942,
+      "sha256": "1d911bfdd956bef544c8bba7402082a2c40284be83a834557a47710e79fc3870"
+    },
+    {
+      "sourcePath": "examples/steve-jobs-perspective/references/research/03-expression-dna.md",
+      "path": "character-packs/nuwa-20261116/upstream/steve-jobs-perspective/references/research/03-expression-dna.md",
+      "gitBlob": "6355e251634fd59f54dfbefda178e7ec81c5f9ca",
+      "size": 29068,
+      "sha256": "b0566a6a3eada6e54316ca1d3eaedf5368758d70e009e6d9e3ca8c85358cc767"
+    },
+    {
+      "sourcePath": "examples/steve-jobs-perspective/references/research/04-external-views.md",
+      "path": "character-packs/nuwa-20261116/upstream/steve-jobs-perspective/references/research/04-external-views.md",
+      "gitBlob": "078e38c16553d15ae7afa3bed2aa391d7b6778b1",
+      "size": 29743,
+      "sha256": "6eedebf0fc9de5a35a51ac6e37d1af35c0635424fc91c0e7847e5c7c495272f5"
+    },
+    {
+      "sourcePath": "examples/steve-jobs-perspective/references/research/05-decisions.md",
+      "path": "character-packs/nuwa-20261116/upstream/steve-jobs-perspective/references/research/05-decisions.md",
+      "gitBlob": "e766f4374eec1cd971ad80c66dc317d102377b90",
+      "size": 24463,
+      "sha256": "2de85d862bb2b82f5ed1df88be010a14c286f0a6306287ed0afcca28d9fa19c9"
+    },
+    {
+      "sourcePath": "examples/steve-jobs-perspective/references/research/06-timeline.md",
+      "path": "character-packs/nuwa-20261116/upstream/steve-jobs-perspective/references/research/06-timeline.md",
+      "gitBlob": "b5f1acbc1898e5aded4c33456db502cc72d8efd2",
+      "size": 20440,
+      "sha256": "c950a73b68c77c8741b81768636463fd4e8ea249ea1c08485f7c9e6b9d9f13c3"
+    },
+    {
+      "sourcePath": "examples/steve-jobs-perspective/references/research/07-upgrade-2026-11.md",
+      "path": "character-packs/nuwa-20261116/upstream/steve-jobs-perspective/references/research/07-upgrade-2026-11.md",
+      "gitBlob": "110ec8a9bc9f87a0eabb37ab2f0a4c40c42d05b8",
+      "size": 16642,
+      "sha256": "bfd7d3cdef364550c66aca69d9ad17bbf81dc6ed69b1f66c17c26c1f35b30e48"
+    },
+    {
+      "sourcePath": "examples/steve-jobs-perspective/references/voice.md",
+      "path": "character-packs/nuwa-20261116/upstream/steve-jobs-perspective/references/voice.md",
+      "gitBlob": "1dc90c4045d337c29b8427d836410103b407435a",
+      "size": 10546,
+      "sha256": "c641063c20a48286092752553168a09d37c01c156f437ea23b220d544a404bb0"
+    },
+    {
+      "sourcePath": "examples/sun-yuchen-perspective/SKILL.md",
+      "path": "character-packs/nuwa-20261116/upstream/sun-yuchen-perspective/SKILL.md",
+      "gitBlob": "24ef730c49203dea5983be8f2834678c7e3daf5a",
+      "size": 31741,
+      "sha256": "77572b9ef87b0ec70073ada6964033022bf0ad542f40b99951ab3d4fe872ff21"
+    },
+    {
+      "sourcePath": "examples/sun-yuchen-perspective/references/research/01-writings.md",
+      "path": "character-packs/nuwa-20261116/upstream/sun-yuchen-perspective/references/research/01-writings.md",
+      "gitBlob": "eeec5ff092e1064d1e83fdb424a8e93eecb3ab9b",
+      "size": 30229,
+      "sha256": "11ab2846d680624c0a5788e01cbb6a8c145c1932c942299d606509ac6089d8c6"
+    },
+    {
+      "sourcePath": "examples/sun-yuchen-perspective/references/research/02-conversations.md",
+      "path": "character-packs/nuwa-20261116/upstream/sun-yuchen-perspective/references/research/02-conversations.md",
+      "gitBlob": "250d91537b74e5ee0e1c2d771a6c493bc5ae856e",
+      "size": 23697,
+      "sha256": "45fc98e81723172317900abe7f14d06e0c6c8fbc352ce501bb4dcb81523e0e3e"
+    },
+    {
+      "sourcePath": "examples/sun-yuchen-perspective/references/research/03-expression-dna.md",
+      "path": "character-packs/nuwa-20261116/upstream/sun-yuchen-perspective/references/research/03-expression-dna.md",
+      "gitBlob": "6945bab10fbfbecca6d76038418cf7f47cb52a40",
+      "size": 14280,
+      "sha256": "406a6334f29de962a18b739d6e33048ddfcb2f96492bcc4e75f037e717173fa4"
+    },
+    {
+      "sourcePath": "examples/sun-yuchen-perspective/references/research/04-external-views.md",
+      "path": "character-packs/nuwa-20261116/upstream/sun-yuchen-perspective/references/research/04-external-views.md",
+      "gitBlob": "c88aa5d6599847a248de85f404daf88eea1e57e7",
+      "size": 19600,
+      "sha256": "2e726a892c11a911dd0e10d4f683b72429ec6e63f6ac314808cb166e686a726c"
+    },
+    {
+      "sourcePath": "examples/sun-yuchen-perspective/references/research/05-decisions.md",
+      "path": "character-packs/nuwa-20261116/upstream/sun-yuchen-perspective/references/research/05-decisions.md",
+      "gitBlob": "f2c09d775e9b03e2be1f59769fa1b354b5b9d60d",
+      "size": 31811,
+      "sha256": "92ffca8dc5c11b0483a6f3416355bfa9ddfcf6ce6e1628cd9646219d79edb794"
+    },
+    {
+      "sourcePath": "examples/sun-yuchen-perspective/references/research/06-timeline.md",
+      "path": "character-packs/nuwa-20261116/upstream/sun-yuchen-perspective/references/research/06-timeline.md",
+      "gitBlob": "6ecbd2d3465da624e853ecff03e6ef3dd4ab9376",
+      "size": 10457,
+      "sha256": "ae89abbcb36a04dbbaf7c5526f50224a92e5094382d3b36e790a92a647354bbb"
+    },
+    {
+      "sourcePath": "examples/zhang-yiming-perspective/SKILL.md",
+      "path": "character-packs/nuwa-20261116/upstream/zhang-yiming-perspective/SKILL.md",
+      "gitBlob": "abd941327a86ce224ca7bd3a4e6ce01ef216a951",
+      "size": 29494,
+      "sha256": "1678459e320850b4e2a6f2a29ebc3bc991ece0daf06c6d87d3a2eb03f58eded2"
+    },
+    {
+      "sourcePath": "examples/zhang-yiming-perspective/references/research/01-writings.md",
+      "path": "character-packs/nuwa-20261116/upstream/zhang-yiming-perspective/references/research/01-writings.md",
+      "gitBlob": "ce46df4f325941eee3cf256db3f4db84faee2076",
+      "size": 17954,
+      "sha256": "9ee74c5c98990a6aa76a7823819be974d880f2aea41bd35766edf4df687c1cd9"
+    },
+    {
+      "sourcePath": "examples/zhang-yiming-perspective/references/research/02-conversations.md",
+      "path": "character-packs/nuwa-20261116/upstream/zhang-yiming-perspective/references/research/02-conversations.md",
+      "gitBlob": "1dd8bf34656d9e82afc85319cfac55aa3cc6b5ce",
+      "size": 19465,
+      "sha256": "06373eed99b24d02630a07c03f68292caeec3958e80f7c6780286de623bd52b0"
+    },
+    {
+      "sourcePath": "examples/zhang-yiming-perspective/references/research/03-expression-dna.md",
+      "path": "character-packs/nuwa-20261116/upstream/zhang-yiming-perspective/references/research/03-expression-dna.md",
+      "gitBlob": "983dad05b29a92f2137a03940ab3a8f9e6e28d80",
+      "size": 10283,
+      "sha256": "73159ab70e14d64fd4c46ce52660f504de0fa2ab403a28172dbc61f4cdf8de1c"
+    },
+    {
+      "sourcePath": "examples/zhang-yiming-perspective/references/research/04-external-views.md",
+      "path": "character-packs/nuwa-20261116/upstream/zhang-yiming-perspective/references/research/04-external-views.md",
+      "gitBlob": "71a296c0136234f8827d407d58af77001dc60ca0",
+      "size": 15077,
+      "sha256": "2c98c8d858b61c4f5b157df39bd695cd1650a4424e64448d5d1887377bf6bd7b"
+    },
+    {
+      "sourcePath": "examples/zhang-yiming-perspective/references/research/05-decisions.md",
+      "path": "character-packs/nuwa-20261116/upstream/zhang-yiming-perspective/references/research/05-decisions.md",
+      "gitBlob": "7568e6e78d1d2d747a096d4786474bcd1226a106",
+      "size": 14823,
+      "sha256": "03f0087d67d6769c39f5f758a42e057c61fcf9a5104713d1f216b38bd913033c"
+    },
+    {
+      "sourcePath": "examples/zhang-yiming-perspective/references/research/06-timeline.md",
+      "path": "character-packs/nuwa-20261116/upstream/zhang-yiming-perspective/references/research/06-timeline.md",
+      "gitBlob": "87789677a6ca8a81aebf5b10d987e99507ee5b87",
+      "size": 9887,
+      "sha256": "37d34c7ec0a891ad88e6461818640e2d1556ee5ba1f3e655866fb85f1fc7c02a"
+    }
+  ]
+}

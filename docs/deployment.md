@@ -1,6 +1,6 @@
 # 当前线上部署与更新
 
-核对日期：2026-11-16（Asia/Shanghai）。应用版本保持1.2.0，维护分支为 `version1.2.0`。当前线上运行功能提交是 `1bd1cf70865cf9d95f8a12857dd336ddd7de906c`；本次合并在相同运行代码上补齐维护文档，无需因文档更新重启服务。历史标签 `v1.2.0` 仍指向首次封版 `358e6ef`。
+1.3.0发布日期：2026-11-17（Asia/Shanghai）。源码分支 `release1.3.0`，固定标签 `v1.3.0`；使用已提交源码归档发布。当前提交、包哈希和上一版本路径写入服务器 `/opt/chat-lab/deployment/`，与本地忽略目录的发布回执核对。
 
 ## 实际运行位置
 
@@ -10,7 +10,7 @@
 | 服务 | `chat-lab.service`，单Node进程，开机启动、异常重启 |
 | 运行用户 | `chat-lab` |
 | Node | 独立Node.js 24.22.3，不替换系统Node20 |
-| 代码 | `/opt/chat-lab/current` → `releases/1.2.0-1bd1cf7` |
+| 代码 | `/opt/chat-lab/current` → `releases/1.3.0-提交短号`；旧的 `1.2.0-1bd1cf7` 保留 |
 | 运行时 | `/opt/chat-lab/runtime/node-v24.22.3-linux-x64/bin/node` |
 | 外部环境文件 | `/etc/chat-lab/service.env`，root所有，0600 |
 | 公共角色库 | `/var/lib/chat-lab/public-catalog.sqlite`，服务用户所有，0600 |
@@ -40,7 +40,7 @@ CHAT_ALLOW_DATA_RESET=0
 
 ```ini
 [Unit]
-Description=Chat Lab 1.2.0 browser-local public demo
+Description=Chat Lab browser-local public demo
 Wants=network-online.target
 After=network-online.target
 
@@ -73,13 +73,13 @@ WantedBy=multi-user.target
 
 ## 更新代码
 
-1. 在构建机获取 `version1.2.0` 最新代码。工作区有修改时先保存，不覆盖私人文件；用 `git archive` 生成只含已提交源码的发布包，记录提交和SHA256。不要打包 `.env`、`data/`、`verification/`、私人音频或旧聊天SQLite。
+1. 在构建机获取 `release1.3.0` 的 `v1.3.0` 固定代码。工作区有修改时先保存，不覆盖私人文件；用 `git archive` 生成只含已提交源码的发布包，记录提交和SHA256。不要打包 `.env`、`data/`、`verification/`、私人音频或旧聊天SQLite。
 2. 更新前对公共角色库做一致性备份，保留现有服务文件、外部环境配置和旧release。公开角色库属于运行数据，不能在发布时清空或重新初始化。
-3. 解压至独立新目录，例如 `/opt/chat-lab/releases/1.2.0-提交短号`。保持代码root所有、服务用户只读，使用独立Node24验证语法和模拟模型测试。
+3. 解压至独立新目录，例如 `/opt/chat-lab/releases/1.3.0-提交短号`。保持代码root所有、服务用户只读，使用独立Node24验证语法和模拟模型测试。
 4. 原子切换 `current` 软链接，再执行 `systemctl restart chat-lab.service`。只有修改过服务文件时才需要先 `systemd-analyze verify` 和 `systemctl daemon-reload`。
 5. 核对状态和接口。服务重启会使旧进入凭证失效，需要重新输入口令；浏览器工作区及创建者管理凭证仍保留。
 
-本次功能已通过273项本地自动测试、32项服务器聚焦测试、双origin浏览器创建/权限/编辑/删除验收，以及一次线上公共角色真实聊天验收。文档合并不改变这些运行代码，不重复发起付费模型验收。
+1.3.0本地已通过318项自动测试、消息数组与AI导师真实模型试聊；发布时另在服务器执行自动测试和门禁/角色/版本核验。具体回执保留在部署记录，不把历史验证次数当成这次线上检查结果。
 
 ## 公共角色库备份与回滚
 
@@ -114,6 +114,6 @@ curl -i http://8.137.116.27:9988/api/auth/session
 curl -i http://8.137.116.27:9988/api/catalog
 ```
 
-首页及进入状态应返回200；未登录公共角色库应返回401。用页面输入服务器口令后，角色库应正常读取，创建表单明确提示公开，系统角色没有删除按钮。默认选中林小满，默认访客22岁，原有用户与记忆保留。以上检查无需调用模型。
+首页及进入状态应返回200；未登录公共角色库应返回401。用页面输入服务器口令后，角色库应正常读取，创建表单明确提示公开，系统角色没有删除按钮。默认展示林小满、鳄鱼爸爸、大肥鱼和林晚晴，默认访客22岁，原有用户与记忆保留。以上检查无需调用模型。
 
 当前没有配置HTTPS域名。以后迁移域名或协议时同步修改精确 `CHAT_PUBLIC_ORIGIN` 和代理Host；不同Origin的IndexedDB及管理凭证不会自动迁移。HTTPS反代的SSE与请求大小配置见[浏览器本地架构](browser-local-demo.md)。

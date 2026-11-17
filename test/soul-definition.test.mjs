@@ -80,21 +80,22 @@ test('the migrated crocodile retains its original scope ID and uses the complete
   const soul = loadSouls().get(originalId);
   assert(soul);
   assert.equal(soul.schemaVersion, 2);
-  assert.equal(soul.version, 'chat-v4');
+  assert.equal(soul.version, 'croco-ai-mentor-v3');
   assert.equal(soul.name, '鳄鱼爸爸');
   assert.equal(soul.identity.name, soul.name);
   assert.equal(renderSoul(soul), `${COMMON_PROMPT}\n\n【名称】${soul.name}\n【角色设定】${soul.definition}`);
 });
 
-test('Pinecone keeps its exact schema-1 bytes while Lin Xiaoman uses the complete schema-2 definition', () => {
+test('Pinecone keeps its exact schema-1 role bytes while Lin Xiaoman uses the complete schema-2 definition', () => {
+  // Freeze the role bytes; shared chat guidance is maintained independently.
   const expected = new Map([
-    ['pinecone-lab', '515e97d363e1d9a97c3ae4ec1107621899ae80518e895422beabf903003e071b'],
+    ['pinecone-lab', '96a2dbb70e9c0c4452387e1471e35e21e4db08c5e16177b0489107527cbe9781'],
   ]);
   const souls = loadSouls();
   for (const [id, hash] of expected) {
     const soul = souls.get(id);
     assert.equal(soul.schemaVersion, 1);
-    assert.equal(createHash('sha256').update(renderSoul(soul)).digest('hex'), hash);
+    assert.equal(createHash('sha256').update(renderSoul(soul).slice(COMMON_PROMPT.length + 2)).digest('hex'), hash);
   }
   const lin = souls.get('lin-xiaoman');
   assert.equal(lin.schemaVersion, 2);

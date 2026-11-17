@@ -306,6 +306,7 @@ test('the real entry controller reaches recovery before loadState, then resumes 
     return elements.get(id);
   };
   const loaded = [];
+  const logout = { hidden: false };
   let workspace;
   const controller = runInNewContext(`
     let workspaceClient = null, localSelection = {}, bootstrapSerial = 0;
@@ -323,12 +324,13 @@ test('the real entry controller reaches recovery before loadState, then resumes 
     loadState: async data => loaded.push(data), updateControls() {}, fitComposer() {},
     refreshCatalogPermissions: async () => false,
     offerRecovery: async () => false, openGuide() {}, refreshLocalView() {}, show() {}, showEntrance() {},
-    ui: { 'chat-input': { value: '' } }, el, Date,
+    ui: { 'chat-input': { value: '' }, logout }, el, Date,
     document: { body: { classList: { remove() {} } } },
     setTimeout: () => 1, clearTimeout() {},
   });
   t.after(() => workspace?.stop());
-  await controller.enterWorkspace({ storageMode: 'browser' });
+  await controller.enterWorkspace({ storageMode: 'browser', passwordRequired: false });
+  assert.equal(logout.hidden, true, 'local password-free entry has no logout gate');
   assert.equal(loaded.length, 0, 'state loading must not run behind an abandoned lock');
   assert.equal(controller.pending(), true);
   assert.equal(controller.busy(), true);

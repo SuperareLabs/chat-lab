@@ -15,7 +15,7 @@ test('HTTP lifecycle maintains overview, recalls event details, refreshes origin
   const traces = [];
   const provider = { async chat(options) {
     traces.push(structuredClone(options.messages));
-    if (options.responseFormat) {
+    if (options.responseFormat && options.responseFormat.type !== 'json_object') {
       assert.equal(options.responseFormat.json_schema.name, 'general_chat_memory_v2');
       extraction++;
       const { userMessages: users, memoryIndex } = JSON.parse(options.messages[1].content);

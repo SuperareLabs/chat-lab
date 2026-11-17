@@ -1,5 +1,6 @@
 import { installAgentGallery } from './agent-gallery.js';
 import { LocalWorkspace } from './local-workspace.js';
+import { replyMessages } from './reply-layout.js';
 
 const el = id => document.getElementById(id);
 const ui = Object.fromEntries([
@@ -270,7 +271,7 @@ function renderSelectors() {
     ui['agent-avatar'].classList.toggle('is-fallback', avatar === fallbackAvatar);
   }
   put('agent-name', selected?.name || '选择 Agent');
-  put('agent-description', selected?.definition?.replace(/\s+/g, ' ').slice(0, 72) || '');
+  put('agent-description', selected?.description || selected?.definition?.replace(/\s+/g, ' ').slice(0, 72) || '');
   const modelName = state.model.name || '聊天模型';
   const text = state.model.mode === 'demo' ? `演示模式 · ${modelName}`
     : state.model.configured ? modelName : (state.agents.length ? '模型尚未配置' : '正在连接');
@@ -310,11 +311,6 @@ function updateControls() {
   syncAgentGalleryRoute();
 }
 
-function assistantBubbles(text) {
-  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-  if (lines.length <= 3 && lines.every(line => line.length <= 64) && !text.includes('```')) return lines;
-  return [text];
-}
 
 function chatMessage(role, text, animate = false, replyParts) {
   const assistant = role === 'assistant';
@@ -327,9 +323,7 @@ function chatMessage(role, text, animate = false, replyParts) {
     row.append(avatar);
   }
   const stack = node('div', 'message-stack');
-  const sections = assistant && Array.isArray(replyParts) && replyParts.length &&
-    replyParts.every(part => typeof part === 'string' && part.trim()) ? replyParts : text === undefined ? [] : [text];
-  const bubbles = assistant ? sections.flatMap(assistantBubbles) : sections;
+  const bubbles = assistant ? replyMessages(text, replyParts) : text === undefined ? [] : [text];
   for (const part of bubbles) stack.append(messageBubble(part, animate));
   row.append(stack);
   return { row, stack };
@@ -353,14 +347,9 @@ function removeTyping(stack) {
 
 async function appendReplyPart(stack, text, keepWaiting = () => false) {
   removeTyping(stack);
-  for (const [index, part] of assistantBubbles(text).entries()) {
-    if (index && !reduceMotion.matches) {
-      await new Promise(resolve => setTimeout(resolve, Math.min(460, 160 + part.length * 16)));
-    }
-    const follow = ui.messages.scrollHeight - ui.messages.scrollTop - ui.messages.clientHeight < 64;
-    stack.append(messageBubble(part, true));
-    if (follow) scrollLatest(true);
-  }
+  const follow = ui.messages.scrollHeight - ui.messages.scrollTop - ui.messages.clientHeight < 64;
+  stack.append(messageBubble(text, true));
+  if (follow) scrollLatest(true);
   if (keepWaiting()) appendTyping(stack);
 }
 
@@ -374,7 +363,9 @@ function scrollLatest(force = false) {
   if (force || list.scrollHeight - list.scrollTop - list.clientHeight < 150) list.scrollTop = list.scrollHeight;
 }
 
-function renderChat(messages = [], loading = false) {
+function renderChat(messages = [], loading = false, { preserveScroll = false } = {}) {
+  const scrollTop = ui.messages.scrollTop;
+  const followLatest = ui.messages.scrollHeight - scrollTop - ui.messages.clientHeight < 150;
   const empty = ui['chat-empty'];
   const rows = messages.map(message => chatMessage(message.role, message.text ?? message.content ?? '', false, message.parts).row);
   if (empty) {
@@ -384,7 +375,8 @@ function renderChat(messages = [], loading = false) {
     ui.messages.replaceChildren(...rows);
   } else if (rows.length) ui.messages.replaceChildren(...rows);
   else ui.messages.replaceChildren(node('div', 'panel-empty', state.childId ? '发一条消息开始聊天。' : '先选择或创建用户。'));
-  scrollLatest(true);
+  if (preserveScroll && !followLatest) ui.messages.scrollTop = scrollTop;
+  else scrollLatest(true);
 }
 
 function emptyPanel(title, description = '') {
@@ -1415,7 +1407,7 @@ async function loadState(data, { preferDefaultAgent = false } = {}) {
   state.agents = data.agents || [];
   state.children = data.children || [];
   state.model = data.model || {};
-  const defaultAgentId = state.agents.find(item => item.id === 'lin-xiaoman')?.id || state.agents[0]?.id || '';
+  const defaultAgentId = state.agents.find(item => item.id === 'shen-zhiheng')?.id || state.agents.find(item => item.id === 'lin-xiaoman')?.id || state.agents[0]?.id || '';
   state.agentId = (preferDefaultAgent ? defaultAgentId : '') ||
     state.agents.find(item => item.id === saved.agentId)?.id || defaultAgentId;
   state.childId = state.children.find(item => item.id === saved.childId)?.id || state.children[0]?.id || '';
@@ -1644,6 +1636,7 @@ async function authRequest(path, body) {
 
 async function enterWorkspace(session) {
   const serial = ++bootstrapSerial;
+  ui.logout.hidden = session.passwordRequired === false;
   workspaceClient?.stop();
   if (session.storageMode === 'browser') {
     workspaceClient = new LocalWorkspace({
@@ -1750,18 +1743,56 @@ async function resumeEntryRecovery(acknowledge = true) {
 let refreshingLocal = false;
 let refreshLocalTimer;
 async function refreshLocalView() {
-  if (!state.authenticated || !workspaceClient || refreshingLocal || pendingEntry) return;
-  if (state.sending || state.busy || state.editorSaving || state.pendingMessages.length || state.queueSaving) {
+  if (!state.authenticated || !workspaceClient || pendingEntry || document.hidden) return;
+  const busy = () => state.sending || state.busy || state.editorSaving || state.pendingMessages.length || state.queueSaving ||
+    el('agent-editor').open || el('agent-delete-dialog').open || el('recovery-dialog').open;
+  if (refreshingLocal || busy()) {
     clearTimeout(refreshLocalTimer);
     refreshLocalTimer = setTimeout(() => void refreshLocalView(), 500);
     return;
   }
   refreshingLocal = true;
-  const draft = { ...selectedScope(), text: ui['chat-input'].value };
+  const client = workspaceClient, scopeVersion = state.scopeVersion, sessionVersion = state.sessionVersion;
+  const current = () => client === workspaceClient && state.authenticated &&
+    scopeVersion === state.scopeVersion && sessionVersion === state.sessionVersion && !busy();
   try {
-    await runAction(async () => loadState(await api('/api/state')));
-    if (draft.childId === state.childId && draft.agentId === state.agentId && draft.text) {
-      ui['chat-input'].value = draft.text; fitComposer(); updateControls();
+    const data = await api('/api/state');
+    if (!current()) return;
+    if (state.dataVersion !== (data.dataVersion || '') ||
+        !data.agents?.some(item => item.id === state.agentId) ||
+        !data.children?.some(item => item.id === state.childId)) {
+      await runAction(() => loadState(data));
+      return;
+    }
+    const agentsChanged = JSON.stringify(state.agents) !== JSON.stringify(data.agents);
+    const childrenChanged = JSON.stringify(state.children) !== JSON.stringify(data.children);
+    state.agents = data.agents; state.children = data.children; state.model = data.model || {};
+    if (agentsChanged) syncAgentGalleryRoute.refresh();
+
+    const sessions = (await api(scoped('/api/sessions'))).sessions || [];
+    if (!current()) return;
+    // Another tab opening a new conversation must not replace this tab's selection.
+    const id = sessions.find(item => item.id === state.sessionId)?.id ||
+      sessions.find(item => item.status === 'open')?.id || sessions[0]?.id || '';
+    const conversation = id ? await api(scoped(`/api/sessions/${encodeURIComponent(id)}`)) : null;
+    if (!current()) return;
+    const selectionChanged = id !== state.sessionId;
+    const sessionsChanged = JSON.stringify(state.sessions) !== JSON.stringify(sessions);
+    const messagesChanged = selectionChanged || JSON.stringify(state.conversation?.messages || []) !== JSON.stringify(conversation?.messages || []);
+    const contextChanged = JSON.stringify(state.conversation?.context ?? null) !== JSON.stringify(conversation?.context ?? null);
+    const usageChanged = JSON.stringify(state.conversation?.usage ?? null) !== JSON.stringify(conversation?.usage ?? null);
+    state.sessions = sessions; state.sessionId = id; state.conversation = conversation;
+    if (agentsChanged || childrenChanged || sessionsChanged || selectionChanged) renderSelectors();
+    if (selectionChanged) saveSelection();
+    if (messagesChanged) renderChat(conversation?.messages || [], false, { preserveScroll: !selectionChanged });
+    if (contextChanged) renderContext(conversation?.context ?? null);
+    if (usageChanged) renderUsage(conversation?.usage ?? null);
+    await refreshMemory();
+    if (current()) updateControls();
+  } catch (error) {
+    if (current()) {
+      show('app-error', error.message);
+      if (error.needsRecovery) void offerRecovery();
     }
   }
   finally { refreshingLocal = false; }

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="林晚晴文字头像">
+  <rect width="512" height="512" rx="112" fill="#684d54"/>
+  <path d="M112 135h128v236H112c46-19 82-19 128 0m0-236h160v236H240" fill="none" stroke="#ead3c3" stroke-opacity=".4" stroke-width="2"/>
+  <text x="256" y="298" text-anchor="middle" fill="#fff1e7" font-family="serif" font-size="148">晴</text>
+  <text x="256" y="415" text-anchor="middle" fill="#ead3c3" font-family="sans-serif" letter-spacing="6" font-size="15">LIN WANQING</text>
+</svg>

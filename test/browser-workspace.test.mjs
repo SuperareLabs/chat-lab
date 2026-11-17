@@ -478,6 +478,56 @@ const catalogSeed = (seed, definition) => ({ ...seed, definition,
   metadata: { ...seed.metadata, catalogDefinitionSha256: hashDefinition(definition),
     catalogPreviousDefinitionSha256: [hashDefinition(seed.definition)] } });
 
+test('adding managed stock viewpoints imports missing roles once without changing existing data or private edits', async () => {
+  const f = fixture(), a = await client(f);
+  await a.chat('我每周末练习吉他。');
+  const before = structuredClone(a.snapshot);
+  const extra = catalogSeed({ id: 'new-viewpoint', name: '新增视角', definition: '原始试验设定。', metadata: {} }, '新人物视角。');
+  const workspace = createBrowserWorkspace({ ...f.config, defaultAgents: [...seeds, extra] });
+  const updated = await workspace.execute({ method: 'GET', path: '/api/state', snapshot: before });
+  assert.equal(updated.value.agents.find(agent => agent.id === extra.id).definition, extra.definition);
+  for (const [table, rows] of Object.entries(before.tables)) {
+    if (table !== 'agents') assert.deepEqual(updated.snapshot.tables[table], rows, table);
+  }
+  for (const row of before.tables.agents) assert.deepEqual(updated.snapshot.tables.agents.find(a => a.id === row.id), row);
+  const repeated = await workspace.execute({ method: 'GET', path: '/api/state', snapshot: updated.snapshot });
+  assert.deepEqual(repeated.snapshot.tables.agents, updated.snapshot.tables.agents);
+  const edited = structuredClone(repeated.snapshot);
+  const row = edited.tables.agents.find(agent => agent.id === extra.id);
+  row.definition = '用户编辑过的新视角。'; row.revision = 2; row.version = 'db-v2';
+  const retained = await workspace.execute({ method: 'GET', path: '/api/state', snapshot: edited });
+  assert.equal(retained.value.agents.find(agent => agent.id === extra.id).definition, row.definition);
+});
+
+test('retired defaults disappear and reject new chat while their edits, history and memories stay intact', async () => {
+  const f = fixture(), a = await client(f);
+  await a.chat('我每周末练习吉他。');
+  await a.newSession();
+  const before = structuredClone(a.snapshot);
+  const role = before.tables.agents.find(row => row.id === seeds[0].id);
+  role.name = '我私改过的名字';
+  role.definition = '我私改过的人设。';
+  const preserved = Object.fromEntries(Object.entries(before.tables).filter(([table]) => table !== 'agents'));
+  const calls = f.calls.chat.length + f.calls.memory.length;
+  const workspace = createBrowserWorkspace({ ...f.config, retiredAgentIds: [seeds[0].id] });
+  const result = await workspace.execute({ method: 'GET', path: '/api/state', snapshot: before });
+  assert.deepEqual(result.value.agents.map(row => row.id), [seeds[1].id]);
+  assert.deepEqual(Object.fromEntries(Object.entries(result.snapshot.tables).filter(([table]) => table !== 'agents')), preserved);
+  const saved = result.snapshot.tables.agents.find(row => row.id === role.id);
+  assert.deepEqual({ ...saved, metadata: role.metadata }, role, 'role edits and revision stay intact');
+  assert.deepEqual(JSON.parse(saved.metadata), { ...JSON.parse(role.metadata), hidden: true });
+  assert(result.invalidates.includes('/api/agents'));
+  const blocked = await workspace.execute({ method: 'POST', path: '/api/chat', snapshot: result.snapshot, scope: a.scope,
+    body: { ...a.scope, text: '再聊一句', requestId: 'retired-default' } });
+  assert.equal(blocked.status, 410);
+  assert.equal(f.calls.chat.length + f.calls.memory.length, calls);
+  assert.deepEqual(blocked.snapshot.tables.messages, before.tables.messages);
+  const again = await workspace.execute({ method: 'GET', path: '/api/state', snapshot: result.snapshot });
+  assert.deepEqual(again.snapshot, result.snapshot, 'retirement is idempotent');
+  const fresh = await workspace.execute({ method: 'GET', path: '/api/state' });
+  assert.deepEqual(fresh.value.agents.map(row => row.id), [seeds[1].id]);
+});
+
 test('an untouched stock catalog upgrades once while every conversation, memory and old context stays intact', async () => {
   const oldSeeds = [
     { ...seeds[0], metadata: { card: { theme: 'amber', portrait: '/assets/local-a.png' }, localNote: '保留本地展示资料' } },
@@ -531,6 +581,35 @@ test('an untouched stock catalog upgrades once while every conversation, memory 
   assert(fresh.value.agents.every(agent => agent.revision === 1), 'new workspaces directly seed the latest definitions');
 });
 
+test('managed viewpoint names migrate in place while manual names and definitions remain untouched', async () => {
+  const original = { ...catalogSeed(seeds[0], '旧视角正文。'), name: '旧人物 · 思考视角' };
+  const next = { ...catalogSeed(original, '完整人物正文。'), name: '完整人物',
+    metadata: { ...catalogSeed(original, '完整人物正文。').metadata, catalogPreviousNames: [original.name],
+      description: 'AI人物演绎', nuwaSource: { adaptationVersion: 'whole-person-v2' },
+      card: { role: '完整人物 · AI人物演绎', personality: '完整性格' } } };
+  const f = fixture({ defaultAgents: [original] }), a = await client(f);
+  await a.chat('我最近在读书。');
+  const before = structuredClone(a.snapshot);
+  const workspace = createBrowserWorkspace({ ...f.config, defaultAgents: [next] });
+  const updated = await workspace.execute({ method: 'GET', path: '/api/state', snapshot: before });
+  const agent = updated.value.agents[0];
+  assert.equal(agent.id, original.id);
+  assert.equal(agent.name, next.name);
+  assert.equal(agent.definition, next.definition);
+  assert.equal(agent.card.identity.role, next.metadata.card.role);
+  for (const [table, rows] of Object.entries(before.tables)) {
+    if (table !== 'agents') assert.deepEqual(updated.snapshot.tables[table], rows, table);
+  }
+  const repeated = await workspace.execute({ method: 'GET', path: '/api/state', snapshot: updated.snapshot });
+  assert.deepEqual(repeated.snapshot, updated.snapshot);
+  for (const field of ['name', 'definition']) {
+    const edited = structuredClone(before);
+    edited.tables.agents[0][field] = '用户的私人修改';
+    const preserved = await workspace.execute({ method: 'GET', path: '/api/state', snapshot: edited });
+    assert.equal(preserved.value.agents[0][field], '用户的私人修改');
+  }
+});
+
 test('catalog upgrades preserve personal definition edits, renamed roles, edited legacy rows and user-created UUIDs', async () => {
   const oldSeeds = [
     { ...seeds[0], metadata: { catalogDefinitionSha256: hashDefinition(seeds[0].definition) } },
@@ -547,4 +626,31 @@ test('catalog upgrades preserve personal definition edits, renamed roles, edited
   const next = await createBrowserWorkspace({ ...f.config, defaultAgents: nextSeeds }).execute({ method: 'GET', path: '/api/state', snapshot: before, scope: a.scope });
   assert.deepEqual(next.snapshot, before);
   assert.equal(next.invalidates, undefined);
+});
+
+
+test('a repeated memory mention may anchor in a later session of the same scope, but never another role', async () => {
+  const f = fixture(), a = await client(f);
+  await a.chat('我每周末练习吉他。');
+  await a.newSession();
+  const first = structuredClone(a.snapshot.tables.memories[0]);
+  await a.chat('我还是每周末练习吉他。');
+  await a.newSession();
+  const touched = a.snapshot.tables.memories[0];
+  assert.equal(touched.id, first.id);
+  assert.equal(touched.session_id, first.session_id, 'creation session remains unchanged');
+  assert.notEqual(touched.anchor_id, first.anchor_id, 'latest mention uses a new user message');
+  const before = structuredClone(a.snapshot);
+  const restored = await a.send('GET', '/api/state');
+  assert.equal(restored.status, 200);
+  assert.deepEqual(restored.snapshot.tables.memories, before.tables.memories);
+  assert.deepEqual(restored.snapshot.tables.messages, before.tables.messages);
+  a.select({ ...a.scope, agentId: seeds[1].id });
+  await a.chat('这是另一个角色的消息。');
+  const forged = structuredClone(a.snapshot);
+  const otherSession = forged.tables.sessions.find(row => row.agent_id === seeds[1].id);
+  forged.tables.memories[0].anchor_id = forged.tables.messages.find(row => row.session_id === otherSession.id && row.role === 'user').id;
+  const unchanged = structuredClone(forged);
+  await assert.rejects(f.workspace.execute({ method: 'GET', path: '/api/state', snapshot: forged }), /浏览器工作区格式无效/);
+  assert.deepEqual(forged, unchanged, 'invalid input is not modified');
 });

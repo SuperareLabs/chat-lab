@@ -67,7 +67,7 @@ test('initial platform activation and later restarts preserve persisted role and
   t.after(() => rm(directory, { recursive: true, force: true }));
   const provider = {
     async chat(options) {
-      if (options.responseFormat) {
+      if (options.responseFormat && options.responseFormat.type !== 'json_object') {
         const { userMessages: messages } = JSON.parse(options.messages[1].content);
         const source = messages[0];
         return memoryResponse([{ anchorMessageId: source.id, sourceMessageIds: [source.id], summary: '旧版会话摘要' }]);
@@ -164,7 +164,7 @@ test('localhost navigation works; cross-site API, scope errors and disabled tool
 
   const state = await f.json('/api/state');
   assert.equal(state.model.mode, 'test');
-  assert.equal(state.agents.length, 3);
+  assert.deepEqual(state.agents.map(agent => agent.id).sort(), [...loadSouls().keys()].sort());
   assert.equal(state.children.length, 1);
   assert.deepEqual(state.children[0], { id: state.children[0].id, name: '马超', age: 8, interests: [] });
   const benny = state.agents.find(agent => agent.name === '鳄鱼爸爸');
@@ -307,7 +307,7 @@ test('prompt details expose the active system text without creating a child or i
     const detail = await response.json();
     const soul = f.lab.runtime.souls.get(agent.id);
     assert.deepEqual(Object.keys(detail).sort(), [
-      'agentId', 'common', 'contextBrief', 'dataVersion', 'definition', 'memory', 'memoryModel', 'memoryRepair', 'memoryReview', 'model', 'name', 'revision', 'role', 'system', 'version',
+      'agentId', 'common', 'contextBrief', 'dataVersion', 'definition', 'memory', 'memoryModel', 'memoryRepair', 'memoryReview', 'model', 'name', 'replyProtocol', 'revision', 'role', 'system', 'version',
     ]);
     assert.equal(detail.agentId, agent.id);
     assert.equal(detail.name, agent.name);
@@ -337,7 +337,7 @@ test('prompt details expose the active system text without creating a child or i
   const scope = { childId: (await f.child()).id, agentId: alias.agentId };
   await f.chat(scope, null, '在吗');
   assert.equal(calls[0][0].role, 'system');
-  assert.equal(calls[0][0].content, alias.system, 'details are the same bytes sent to the model');
+  assert.equal(calls[0][0].content, alias.system + '\n\n' + alias.replyProtocol, 'details expose the role system plus protocol sent to the model');
   const activeSoul = f.lab.runtime.souls.get(alias.agentId);
   const changed = activeSoul.schemaVersion === 2
     ? { ...activeSoul, definition: 'changed only in config memory' }
@@ -377,7 +377,7 @@ test('a chat batch keeps each bubble and sends one combined turn to the provider
   assert.equal(detail.context.requestMessages.at(-1).content, combined);
 
   assert.deepEqual((await f.chat(scope, sessionId, messages, requestId)).filter(event => !['usage', 'tool_usage'].includes(event.type)), [
-    { type: 'start', sessionId }, { type: 'delta', text: '那笔账记着。\n三遍，成交。' }, { type: 'done', sessionId },
+    { type: 'start', sessionId }, { type: 'delta', text: '那笔账记着。\n三遍，成交。' }, { type: 'reply_part', index: 0, text: '那笔账记着。\n三遍，成交。', kind: 'answer' }, { type: 'done', sessionId },
   ]);
   assert.equal(calls.length, 1);
   assert.equal((await f.request('/api/chat', { ...scope, sessionId, text: combined, requestId })).status, 409);
@@ -387,7 +387,7 @@ test('a chat batch keeps each bubble and sends one combined turn to the provider
   await f.chat(scope, sessionId, '好，成交。');
   assert.deepEqual(calls[1].slice(2), [
     { role: 'user', content: combined },
-    { role: 'assistant', content: '那笔账记着。\n三遍，成交。' },
+    { role: 'assistant', content: JSON.stringify({ messages: ['那笔账记着。\n三遍，成交。'] }) },
     { role: 'user', content: '好，成交。' },
   ]);
 });
@@ -400,7 +400,7 @@ test('15-minute cutoff, unfinished extraction, cross-day deduplication, mention 
   let firstMemoryId;
   const f = await fixture(t, {
     async chat(options) {
-      if (options.responseFormat) {
+      if (options.responseFormat && options.responseFormat.type !== 'json_object') {
         extracted++;
         const { userMessages: messages } = JSON.parse(options.messages[1].content);
         const sources = messages;
@@ -467,7 +467,7 @@ test('15-minute cutoff, unfinished extraction, cross-day deduplication, mention 
 test('removed profile tools are not advertised and cannot mutate shared or role-specific profiles', async t => {
   const f = await fixture(t, {
     async chat(options) {
-      if (options.responseFormat) return memoryResponse([]);
+      if (options.responseFormat && options.responseFormat.type !== 'json_object') return memoryResponse([]);
       const last = options.messages.at(-1);
       if (last.role === 'user' && last.content.includes('九岁')) return {
         content: '', toolCalls: [
@@ -544,7 +544,7 @@ test('new sessions keep event collections out of default context even with many 
   const count = 121;
   const f = await fixture(t, {
     async chat(options) {
-      if (options.responseFormat) {
+      if (options.responseFormat && options.responseFormat.type !== 'json_object') {
         const { userMessages: messages } = JSON.parse(options.messages[1].content);
         const anchor = messages[0];
         return memoryResponse(Array.from({ length: count }, (_, index) => ({

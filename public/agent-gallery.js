@@ -4,11 +4,18 @@ const promptSections = [
   { key: 'system', label: '完整提示词', description: '后端当前加载并用于聊天的完整 system 内容。' },
   { key: 'common', label: '共用规则', description: '所有聊天角色共用的规则，保留后端原文。' },
   { key: 'role', label: '角色设定', description: '当前角色在共用规则之后追加的设定，保留后端原文。' },
+  { key: 'replyProtocol', label: '消息格式', description: '模型明确区分消息与段落的输出规则；每个数组项是一条消息，换行留在消息内部。' },
   { key: 'memory', label: '记忆整理', description: '后台记忆 Agent 当前实际使用的提取、更新和用户概括维护提示词。' },
   { key: 'memoryRepair', label: '失败修正', description: '仅在完整提取结果未通过解析或校验时，重新使用原始提取输入并追加具体校验错误，由同一模型重整一次；失败 JSON 仅本地审计，不回传模型。正常提取不调用。' },
   { key: 'memoryReview', label: '事实核对', description: '仅核对本轮新增和修改条目的事实依据，不重复处理全部旧记忆。' },
   { key: 'contextBrief', label: '概括选源', description: '为聊天概括去重选源，保留来源原句；不改写或删除原记忆。' },
 ];
+
+function promptText(detail, key) {
+  if (typeof detail?.[key] !== 'string') return '';
+  return key === 'system' && detail.replyProtocol
+    ? `${detail.system}\n\n${detail.replyProtocol}` : detail[key];
+}
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -203,7 +210,7 @@ export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarF
     }
     promptDescription.textContent = section.description;
     copyStatus.textContent = '';
-    const content = typeof detail?.[activeSection] === 'string' ? detail[activeSection] : '';
+    const content = promptText(detail, activeSection);
     promptContent.textContent = content || (detail ? '当前服务尚未提供这份提示词。' : '');
     promptCopy.disabled = !content;
     if (!detail) return;
@@ -405,7 +412,7 @@ export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarF
     const section = activeSection;
     if (!payload || promptCopy.disabled) return;
     try {
-      await navigator.clipboard.writeText(payload[section]);
+      await navigator.clipboard.writeText(promptText(payload, section));
       if (detail === payload && activeSection === section) copyStatus.textContent = '已复制原文';
     } catch {
       if (detail === payload && activeSection === section) copyStatus.textContent = '复制失败，可选中文本手动复制';

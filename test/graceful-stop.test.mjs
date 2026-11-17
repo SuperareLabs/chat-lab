@@ -11,7 +11,7 @@ test('draining shutdown waits for an active chat without aborting its provider o
   let signal, closing, chat, closed = false, completed;
   const lab = createLabServer({ souls: loadSouls(), dbPath: ':memory:', contextBriefEnabled: false,
     provider: { async chat(options) {
-      assert.equal(options.responseFormat, undefined);
+      assert.equal(options.responseFormat.type, 'json_object');
       signal = options.signal;
       entered.resolve();
       await gate.promise;

@@ -11,6 +11,7 @@ import { ChatRuntime } from './lib/runtime.mjs';
 import { createAccessGate } from './lib/access-gate.mjs';
 import { createBrowserWorkspace, BROWSER_WORKSPACE_MAX_BYTES } from './lib/browser-workspace.mjs';
 import { PublicCatalog } from './lib/public-catalog.mjs';
+import { loadSharedPrompts } from './lib/shared-prompts.mjs';
 
 const PUBLIC = fileURLToPath(new URL('./public/', import.meta.url));
 const APP_VERSION = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
@@ -146,16 +147,24 @@ export function createLabServer(options = {}) {
     }
     : { ...readConfig(options.env), ...options };
   const browserMode = config.storageMode === 'browser';
+  if (config.localNoAuth && (config.host !== '127.0.0.1' ||
+      config.publicOrigins.some(value => !['localhost', '127.0.0.1'].includes(new URL(value).hostname)))) {
+    throw new Error('免登录模式仅限127.0.0.1监听和本机访问地址');
+  }
   // Public mode never opens the legacy SQLite file, even if CHAT_DB_PATH is set.
   const store = browserMode ? null : new ChatStore(config.dbPath);
   const runtime = browserMode ? null : new ChatRuntime({ appVersion: APP_VERSION, ...config, store });
-  const gate = browserMode ? createAccessGate({ password: config.accessPassword }) : null;
+  const gate = browserMode && !config.localNoAuth ? createAccessGate({ password: config.accessPassword }) : null;
   if (browserMode && config.catalogPath && config.catalogPath !== ':memory:' && config.dbPath !== ':memory:' &&
       resolve(config.catalogPath) === resolve(config.dbPath)) throw new Error('公共角色库必须与旧聊天数据库使用不同文件');
   const catalog = browserMode ? config.catalog ?? new PublicCatalog({ path: config.catalogPath ?? ':memory:' }) : null;
-  const defaultAgents = browserMode ? config.defaultAgents ?? JSON.parse(readFileSync(new URL('./config/default-agents.json', import.meta.url), 'utf8')).agents : [];
+  const defaults = browserMode && config.defaultAgents === undefined
+    ? JSON.parse(readFileSync(new URL('./config/default-agents.json', import.meta.url), 'utf8')) : {};
+  const defaultAgents = browserMode ? config.defaultAgents ?? defaults.agents : [];
+  const retiredAgentIds = new Set(config.retiredAgentIds ?? defaults.retiredAgentIds ?? []);
+  const sharedPrompts = browserMode ? config.sharedPrompts ?? loadSharedPrompts() : [];
   const browserWorkspace = browserMode ? createBrowserWorkspace({ ...config, appVersion: APP_VERSION,
-    catalog, defaultAgents,
+    catalog, defaultAgents, retiredAgentIds: [...retiredAgentIds], sharedPrompts,
     defaultChildren: config.defaultChildren ?? [{ name: '访客', age: 22, interests: [] }],
   }) : null;
   const activeWorkspaces = new Set();
@@ -168,18 +177,18 @@ export function createLabServer(options = {}) {
     const secure = origin.startsWith('https:');
     if (method === 'GET' && pathname === '/api/auth/session') {
       return sendJson(response, 200, gate ? gate.status(request)
-        : { authenticated: true, passwordRequired: false, storageMode: 'server' });
+        : { authenticated: true, passwordRequired: false, storageMode: config.storageMode });
     }
-    if (browserMode && pathname === '/api/auth/login' && method === 'POST') {
+    if (gate && pathname === '/api/auth/login' && method === 'POST') {
       const login = await gate.login(request, await jsonBody(request), { secure });
       return sendJson(response, 200, login.value, { 'Set-Cookie': login.cookie });
     }
-    if (browserMode && pathname === '/api/auth/logout' && method === 'POST') {
+    if (gate && pathname === '/api/auth/logout' && method === 'POST') {
       const logout = gate.logout(request, { secure });
       return sendJson(response, 200, logout.value, { 'Set-Cookie': logout.cookie });
     }
     if (browserMode && pathname.startsWith('/api/')) {
-      gate.require(request);
+      gate?.require(request);
       if (!accepting) throw problem('服务正在重启，请稍后再试', 503);
       const ownerKey = request.headers['x-chat-lab-owner'];
       if (pathname === '/api/catalog' && method === 'GET') {
@@ -195,7 +204,7 @@ export function createLabServer(options = {}) {
           const revision = catalog.currentRevision();
           if (Number(supplied) === revision) return sendJson(response, 200, { revision, unchanged: true });
         }
-        return sendJson(response, 200, { ...catalog.list(ownerKey), defaultAgentIds: defaultAgents.map(agent => agent.id) });
+        return sendJson(response, 200, { ...catalog.list(ownerKey), defaultAgentIds: defaultAgents.filter(agent => !retiredAgentIds.has(agent.id)).map(agent => agent.id) });
       }
       if (pathname === '/api/catalog/agents' && method === 'POST') {
         return sendJson(response, 201, catalog.create(await jsonBody(request), { ownerKey }));

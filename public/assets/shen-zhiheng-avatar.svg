@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="沈知衡文字头像">
+  <rect width="512" height="512" rx="112" fill="#283333"/>
+  <path d="M82 354V128h348M110 382h294V156" fill="none" stroke="#9aab9d" stroke-opacity=".38" stroke-width="2"/>
+  <text x="256" y="297" text-anchor="middle" fill="#e9e4d7" font-family="serif" font-size="148">衡</text>
+  <text x="256" y="415" text-anchor="middle" fill="#b3beb5" font-family="sans-serif" letter-spacing="6" font-size="15">SHEN ZHIHENG</text>
+</svg>

@@ -219,6 +219,8 @@ const deployedRepairVersions = [
   ['1.3.11', 6, '2c2802f8944d69b0e5c5d027f40e858e44d72524fe1c189818ef55ae3b21e9ec'],
   ['1.3.12', 6, '760e21c0068a87b4a3cc150a0beef67271e6db80215b918be29862643daabb61'],
   ['1.3.15', 6, '1d6d4253c510af3ed22c772aa2b93987f5448dec7eb00a0cca977096fba80fc2'],
+  ['local-personas-v4', 6, '2eca21aaf28e0ab41289b5f63a552e36da0cf7ceee2bf041a618b9e68ed6160c'],
+  ['local-greeting-v1', 6, 'be076f8b44ee99107d303707184d6dd647e64fdf2640c4850f6b43f29db66222'],
 ];
 for (const [version, framework, fingerprint] of deployedRepairVersions) {
 test(`framework 6 adopts the authorized deployed ${version} fingerprint without rewriting business data`, async t => {

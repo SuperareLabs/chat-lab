@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "prompts": [
+    {
+      "id": "academy-worldview-local-20261117",
+      "title": "好奇学院共享世界观与技能边界",
+      "agentIds": ["9a15fadb-1fa5-437d-aeee-6f2a3e1e8d65"],
+      "file": "shared-worldview.md"
+    }
+  ]
+}

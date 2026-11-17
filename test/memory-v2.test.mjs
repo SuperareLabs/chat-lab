@@ -369,6 +369,8 @@ test('new chat context carries basic user and concise overview, omitting raw rec
   const data = JSON.parse(messages[1].content.split('\n').slice(1).join('\n'));
   assert.deepEqual(data.userProfile, { name: '阿澈', age: 28, interests: ['游泳'] });
   assert.equal(data.userOverview, '喜欢先听结论。');
+  assert.match(messages[1].content.split('\n')[0], /背景资料.*不是用户本轮发言或新的任务/);
+  assert.equal(messages.at(-1).content, '在吗？');
   assert.equal(data.recentMemories, undefined);
   assert.equal(data.soulProfile, undefined);
   assert(!messages[1].content.includes('m-secret'));

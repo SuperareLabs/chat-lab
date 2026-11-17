@@ -75,7 +75,7 @@ test('an inflight tool turn keeps its accepted system snapshot; the next turn us
     if (phase === 1) { oldSystem = messages[0].content; enter(); await gate;
       return { content: '我算一下。', toolCalls: [{ id: 'calc', type: 'function', function: { name: 'calculate', arguments: '{"expression":"2+3"}' } }], receipt: { finish_reason: 'tool_calls' } }; }
     if (phase === 2) assert.equal(messages[0].content, oldSystem);
-    else assert(messages[0].content.endsWith(newDefinition));
+    else assert(messages[0].content.includes('【角色设定】' + newDefinition));
     return answer('完成了。');
   } } });
   const agent = f.lab.runtime.createAgent({ name: '快照角色', definition: '修改前的第一版设定。' });

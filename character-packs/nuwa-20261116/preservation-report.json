@@ -1,0 +1,78 @@
+{
+  "version": "source-preserving-v3",
+  "commit": "73b6f2d048c4b06aafd45fc16026c01b7277fd78",
+  "adapter": "character-packs/nuwa-20261116/ADAPTATION.md",
+  "sourceEdits": [],
+  "roles": [
+    {
+      "id": "nuwa-feynman",
+      "name": "费曼",
+      "sourcePath": "examples/feynman-perspective/SKILL.md",
+      "rolePromptFile": "character-packs/nuwa-20261116/roles/feynman.md",
+      "diffPath": "character-packs/nuwa-20261116/changes/feynman.diff",
+      "sourceSha256": "3aa96eb60bfa2da5f7376a7d02bb0bc2a71ee07b6b613c585da763e95bb6a519",
+      "sourceBytes": 28201,
+      "definitionBytes": 31078,
+      "sourceCharacters": 12196,
+      "originalFullyPresent": true,
+      "removedSourceCharacters": 0,
+      "referenceFiles": 6
+    },
+    {
+      "id": "nuwa-munger",
+      "name": "芒格",
+      "sourcePath": "examples/munger-perspective/SKILL.md",
+      "rolePromptFile": "character-packs/nuwa-20261116/roles/munger.md",
+      "diffPath": "character-packs/nuwa-20261116/changes/munger.diff",
+      "sourceSha256": "24b2ddc3a2d58f5f89938a823823462e45e22e93a2bdc02f91fe40aa98932cab",
+      "sourceBytes": 28993,
+      "definitionBytes": 31870,
+      "sourceCharacters": 13065,
+      "originalFullyPresent": true,
+      "removedSourceCharacters": 0,
+      "referenceFiles": 10
+    },
+    {
+      "id": "nuwa-steve-jobs",
+      "name": "乔布斯",
+      "sourcePath": "examples/steve-jobs-perspective/SKILL.md",
+      "rolePromptFile": "character-packs/nuwa-20261116/roles/steve-jobs.md",
+      "diffPath": "character-packs/nuwa-20261116/changes/steve-jobs.diff",
+      "sourceSha256": "88a45d1cac7bf403a4d69e9884a031cec1fcbf5c24768d8c2b7510de25361fa7",
+      "sourceBytes": 30554,
+      "definitionBytes": 33431,
+      "sourceCharacters": 14817,
+      "originalFullyPresent": true,
+      "removedSourceCharacters": 0,
+      "referenceFiles": 10
+    },
+    {
+      "id": "nuwa-zhang-yiming",
+      "name": "张一鸣",
+      "sourcePath": "examples/zhang-yiming-perspective/SKILL.md",
+      "rolePromptFile": "character-packs/nuwa-20261116/roles/zhang-yiming.md",
+      "diffPath": "character-packs/nuwa-20261116/changes/zhang-yiming.diff",
+      "sourceSha256": "1678459e320850b4e2a6f2a29ebc3bc991ece0daf06c6d87d3a2eb03f58eded2",
+      "sourceBytes": 29494,
+      "definitionBytes": 32371,
+      "sourceCharacters": 12367,
+      "originalFullyPresent": true,
+      "removedSourceCharacters": 0,
+      "referenceFiles": 6
+    },
+    {
+      "id": "nuwa-sun-yuchen",
+      "name": "孙宇晨",
+      "sourcePath": "examples/sun-yuchen-perspective/SKILL.md",
+      "rolePromptFile": "character-packs/nuwa-20261116/roles/sun-yuchen.md",
+      "diffPath": "character-packs/nuwa-20261116/changes/sun-yuchen.diff",
+      "sourceSha256": "77572b9ef87b0ec70073ada6964033022bf0ad542f40b99951ab3d4fe872ff21",
+      "sourceBytes": 31741,
+      "definitionBytes": 34618,
+      "sourceCharacters": 14649,
+      "originalFullyPresent": true,
+      "removedSourceCharacters": 0,
+      "referenceFiles": 6
+    }
+  ]
+}
