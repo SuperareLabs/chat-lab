@@ -92,12 +92,12 @@ Bot工作区保存在 `/var/lib/chat-lab-telegram/`，独立于网页公共角�
 
 ## 6. 语音如何兼容
 
-链路：Telegram voice → 网关下载 → 安全传给ASR → 展示转写 → 文字聊天。
+链路：Telegram voice → 下载 → ASR转写并持久保存 → 直接进入当前角色文字聊天。
 
 - 复用已有Croco开发环境的豆包录音极速识别配置模式，凭据保存在项目外，资源为volc.bigasr.auc_turbo；实际识别验证单独记录。
 - Telegram下载URL含Bot Token，不能把这个URL直接传给识别服务。优先传音频字节；若选定服务要求URL，用独立的短期授权对象地址，不带Bot Token。
 - 首版单条不超过2分钟、8MB，是产品限额；下载时也校验实际字节数，不能只信元数据。
-- 首版固定先确认：显示“识别为：……”，点确认才调用聊天模型；用/correct 正确内容纠正，用/cancel取消。确认消息与原语音update_id关联。已进入聊天后的重答/撤销转写暂未做专门入口。
+- 按最新要求取消二次确认：转写成功直接调用聊天模型，复用原语音update_id；不另发转写卡。识别完成后的重启间隙复用持久转写，不重新识别。识别错误可在聊天里直接更正；专门的历史编辑/撤销入口暂未实现。
 - 识别失败、空白或超时就提示重新发，不把报错送给人物模型，不凭音频时长猜内容。
 - Bot下载音频只在内存中处理，不保存为用户音频文件；保存转写、纠正回执和必要来源元数据。Telegram平台仍保留原语音。
 - 本版只有语音输入，没有TTS输出。录音文件/附件是否支持另行列明，不能把支持voice等同于所有格式都支持。
@@ -126,7 +126,7 @@ Bot工作区保存在 `/var/lib/chat-lab-telegram/`，独立于网页公共角�
 | `/create` `/myroles` | 名字＋完整设定创建私人角色、列出自己的角色。 |
 | `/editrole` `/deleterole` | 仅操作自己的角色；保留ID与记忆，删除前确认，不允许删除系统角色。 |
 | `/cancel` | 退出创建/编辑等流程，草稿不当作普通聊天。 |
-| `/profile` `/settings` | 称呼、可选年龄和固定语音确认方式；本版时区为Asia/Shanghai。 |
+| `/profile` `/settings` | 称呼、可选年龄和语音直达说明；本版时区为Asia/Shanghai。 |
 | `/memory` | 当前角色的记忆摘要、提取状态和失败任务。 |
 | `/retrymemory` | 明确重试当前角色最近失败的记忆任务，会再次调用记忆模型。 |
 | `/forget` | 二次确认后清本角色记忆，不误清其他角色。 |
@@ -173,3 +173,7 @@ Bot工作区保存在 `/var/lib/chat-lab-telegram/`，独立于网页公共角�
 - [Telegram Bot API](https://core.telegram.org/bots/api)：长轮询/更新ID、voice/getFile、sendMessage长度、回调与限流。
 - [Telegram Bot功能与BotFather](https://core.telegram.org/bots/features)：创建机器人、命令和内联按钮。
 - [豆包录音文件识别极速版](https://docs.volcengine.com/docs/doubao-voice/recording-file-recognition-lite-http?lang=zh)：音频识别接口与格式支持。具体凭据、模型开通及字节上传方式仍需联调确认。
+
+## 操作信息清理
+
+与人物聊天分开标记操作消息；/memory、/status、菜单和已处理的管理输入等默认60秒后从Telegram删除。普通输入、语音原消息和人物回复保留。计划落盘，后台独立执行，重启继续；只清Telegram界面，不删除ChatStore中的记忆或原始聊天证据。具体规则见部署说明。

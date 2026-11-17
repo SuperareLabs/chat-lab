@@ -174,17 +174,49 @@ test('outbox preserves order, retries only explicit 429, and does not retry unkn
   f.db.receipt({ id: two.id, state: 'sent', telegramId: 88 }); f.db.receipt({ id: two.id, state: 'unknown' });
   assert.equal(f.db.db.prepare('SELECT state FROM outbox WHERE id=?').get(two.id).state, 'sent');
 });
-test('voice is persisted then transcribed and confirmed; correction precedes paid chat and role changes cancel pending voice', async t => {
+test('voice transcribes straight into chat, persists the original voice source, and deduplicates both paid calls', async t => {
   let asr = 0;
-  const f = await fixture(t, { voiceLoader: async () => 'YXVkaW8=', asr: async () => { asr++; return '原识别'; } });
+  const f = await fixture(t, { voiceLoader: async () => 'YXVkaW8=', asr: async () => { asr++; return '我想学画画'; } });
+  const out = await f.send('', 1, 111, { voice: { duration: 2, file_id: 'a', file_size: 4 } });
+  assert.equal(asr, 1); assert.equal(f.count(), 1);
+  assert.deepEqual(out.map(m => m.text), ['在', '第二段\n\n仍是同一条。']);
+  assert.ok(out.every(m => !m.reply_markup));
+  assert.ok(JSON.stringify(f.requests[0].messages).includes('我想学画画'));
+  const row = f.db.db.prepare('SELECT * FROM inbox WHERE id=1').get();
+  assert.equal(row.text, '我想学画画'); assert.equal(JSON.parse(row.source).kind, 'voice');
   await f.send('', 1, 111, { voice: { duration: 2, file_id: 'a', file_size: 4 } });
-  assert.equal(asr, 1); assert.equal(f.count(), 0);
-  const corrected = await f.send('/correct 改正识别', 2); const confirm = corrected[0].reply_markup.inline_keyboard[0][0].callback_data;
-  await f.send(confirm, 3); assert.equal(f.count(), 1); assert.ok(JSON.stringify(f.requests[0].messages).includes('改正识别'));
-  await f.send(confirm, 3); assert.equal(f.count(), 1);
-  const out = await f.send('', 4, 111, { voice: { duration: 2, file_id: 'a' } });
-  await f.send('/role 大肥鱼', 5); const expired = await f.send(out[0].reply_markup.inline_keyboard[0][0].callback_data, 6);
-  assert.match(expired[0].text, /过期/); assert.equal(f.count(), 1);
+  assert.equal(asr, 1); assert.equal(f.count(), 1);
+  assert.equal(f.db.db.prepare('SELECT count(*) n FROM message_cleanup').get().n, 0);
+});
+test('voice stays with the preceding role when a role switch arrives during recognition', async t => {
+  let release; const gate = new Promise(resolve => { release = resolve; });
+  const f = await fixture(t, { voiceLoader: async () => 'eA==', asr: async () => { await gate; return '这是一段语音'; } });
+  f.core.accept(update(1, '', 111, { voice: { duration: 1, file_id: 'a' } }));
+  f.core.accept(update(2, '/role 大肥鱼'));
+  release(); await f.core.idle();
+  const ws = f.core.workspaces.get('111');
+  assert.equal(ws.store.agentRecord(ws.state().roleId).name, '大肥鱼');
+  const run = ws.store.sql('SELECT agent_id FROM runs').get();
+  assert.equal(ws.store.agentRecord(run.agent_id).name, '鳄鱼爸爸');
+});
+test('transcription resumes after a restart gap without recognizing the voice a second time', async t => {
+  let asr = 0;
+  const f = await fixture(t, { voiceLoader: async () => 'eA==', asr: async () => { asr++; return '不能再识别'; } });
+  await f.send('/start', 1);
+  const voice = update(2, '', 111, { voice: { duration: 1, file_id: 'a' } });
+  f.db.accept(voice, privateUpdate(voice));
+  f.db.bind(2, f.core.workspaces.get('111').state().roleId, '/forget');
+  f.core.kick('111'); await f.core.idle();
+  assert.equal(asr, 0); assert.equal(f.count(), 1);
+  assert.ok(JSON.stringify(f.requests[0].messages).includes('/forget'));
+  assert.ok(!f.db.db.prepare('SELECT body FROM outbox WHERE update_id=2').all().some(r => JSON.parse(r.body).reply_markup));
+});
+test('old voice confirmation state does not trap new text or voice in a confirmation flow', async t => {
+  const f = await fixture(t); await f.send('/start', 1);
+  const ws = f.core.workspaces.get('111'), state = ws.state();
+  state.draft = { type: 'voice', text: '旧语音', roleId: state.roleId, nonce: 'old', expires: Date.now()+600000 };
+  ws.save(state); await f.send('继续聊天', 2);
+  assert.equal(f.count(), 1); assert.equal(ws.state().draft, undefined);
 });
 test('unconfigured ASR, unknown voice attempt and recognition failure never reach chat model', async t => {
   const f = await fixture(t); const out = await f.send('', 1, 111, { voice: { duration: 1, file_id: 'x' } });
@@ -196,6 +228,63 @@ test('daily paid-call limit excludes command handling and stored replay', async 
   const f = await fixture(t, { dailyLimit: 1 }); await f.send('一', 1); await f.send('一', 1);
   const out = await f.send('二', 2); assert.match(out[0].text, /额度/); assert.equal(f.count(), 1);
   const status = await f.send('/status', 3); assert.match(status[0].text, /disabled/);
+});
+test('management cards and their text commands expire, but voice and character messages never do', async t => {
+  const f = await fixture(t);
+  await f.send('你好', 1);
+  await f.send('/memory', 2);
+  const normal = f.db.db.prepare('SELECT * FROM outbox WHERE update_id=1').all();
+  const card = f.db.db.prepare('SELECT * FROM outbox WHERE update_id=2').get();
+  assert.ok(normal.every(r => r.ephemeral === 0)); assert.equal(card.ephemeral, 1);
+  for (const row of normal) f.db.receipt({ id: row.id, state: 'sent', telegramId: 100 + row.id });
+  f.db.receipt({ id: card.id, state: 'sent', telegramId: 200 });
+  const scheduled = f.db.db.prepare('SELECT * FROM message_cleanup ORDER BY message_id').all();
+  assert.deepEqual(scheduled.map(r => r.message_id), [2, 200]);
+  assert.ok(scheduled.every(r => r.due_at > Date.now() + 58_000));
+  assert.equal(f.db.nextCleanup(), undefined);
+  assert.ok(f.db.nextCleanup(Date.now() + 61_000));
+});
+test('resend keeps real answer copies while the resend notice is temporary', async t => {
+  const f = await fixture(t); await f.send('你好', 1); await f.send('/resend', 2);
+  const out = f.db.db.prepare('SELECT ephemeral FROM outbox WHERE update_id=2 ORDER BY id').all();
+  assert.deepEqual(out.map(r => r.ephemeral), [1, 0, 0]);
+});
+test('scheduled deletion persists across connections and deletes only the recorded management message', async t => {
+  const f = await fixture(t); await f.send('/status', 1);
+  f.db.db.prepare('UPDATE message_cleanup SET due_at=0').run();
+  const reopened = new BotDatabase(join(f.dir, 'bot.sqlite'));
+  try {
+    const calls = [];
+    const app = new TelegramApp({ env: {}, config: f.config, database: reopened, core: f.core,
+      api: { async call(method, body) { calls.push({ method, body }); return true; } } });
+    assert.equal(await app.cleanupOnce(), true);
+    assert.deepEqual(calls, [{ method: 'deleteMessage', body: { chat_id: '111', message_id: 1 } }]);
+    assert.equal(reopened.db.prepare('SELECT state FROM message_cleanup').get().state, 'done');
+    assert.equal(await app.cleanupOnce(), false);
+  } finally { reopened.close(); }
+});
+test('delete retries are idempotent on timeouts/429 and stop on permanent refusal', async t => {
+  const f = await fixture(t); await f.send('/status', 1);
+  const errors = [Object.assign(new Error(), { unknown: true }), Object.assign(new Error(), { code: 429, retryAfter: 3 }), Object.assign(new Error(), { code: 403 })];
+  const app = new TelegramApp({ env: {}, config: f.config, database: f.db, core: f.core,
+    api: { async call() { throw errors.shift(); } } });
+  for (const expected of ['pending','pending','failed']) {
+    f.db.db.prepare('UPDATE message_cleanup SET due_at=0').run();
+    await app.cleanupOnce(); assert.equal(f.db.db.prepare('SELECT state FROM message_cleanup').get().state, expected);
+  }
+  assert.equal(await app.cleanupOnce(), false); assert.equal(f.count(), 0);
+});
+test('old management responses migrate once; old character answers and resend copies remain', async t => {
+  const f = await fixture(t);
+  await f.send('你好', 1); await f.send('/memory', 2); await f.send('/resend', 3);
+  const rows = f.db.db.prepare('SELECT * FROM outbox ORDER BY id').all();
+  for (const row of rows) f.db.receipt({ id: row.id, state: 'sent', telegramId: 100 + row.id });
+  f.db.db.prepare('DELETE FROM message_cleanup').run();
+  f.db.db.prepare('UPDATE outbox SET ephemeral=0').run();
+  f.db.expireExistingControls();
+  const controls = f.db.db.prepare('SELECT telegram_id FROM outbox WHERE update_id=2').all();
+  assert.deepEqual(f.db.db.prepare('SELECT message_id FROM message_cleanup').all().map(r=>r.message_id), controls.map(r=>r.telegram_id));
+  f.db.expireExistingControls(); assert.equal(f.db.db.prepare('SELECT count(*) n FROM message_cleanup').get().n, controls.length);
 });
 test('API errors redact token, download URL and provider error bodies', async () => {
   const token = '123456:' + 'a'.repeat(35);
