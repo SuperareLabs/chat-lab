@@ -10,7 +10,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => {
 try {
   const identity = await app.initialize();
   console.log(JSON.stringify({ event: 'telegram_ready', username: identity.username,
-    allowedUsers: app.allowed.length, thinking: 'disabled' }));
+    allowedUsers: app.allowed.length, publicAccess: app.publicAccess, thinking: 'disabled' }));
   await app.run();
 } catch {
   console.error('Telegram 启动失败；请检查私有配置、网络、Webhook或工作区版本。未输出凭据。');

@@ -4,7 +4,9 @@
 
 ## 用户怎么开始
 
-打开机器人，点“开始”，直接发文字。未开通账号会显示自己的数字ID；管理员把确认过的ID加入外部配置后重建Bot容器。不要凭用户名或首个/start自动认领管理权限。
+当前为临时公开测试：打开机器人，点“开始”即可使用，无需加入白名单。只开放私聊，每人的角色、聊天与记忆独立。
+
+公开由项目外配置TELEGRAM_PUBLIC_ACCESS=1显式开启；设为0并重建容器后恢复TELEGRAM_ALLOWED_USER_IDS白名单，未开通账号只能查看自己的ID和开通说明。切回白名单不会删除公测用户的数据。
 
 - `/roles`：选择林小满、鳄鱼爸爸、大肥鱼、林晚晴；各自保存历史和记忆。需要成年资料的角色仍要求先填写年龄：`/profile age 22`，请按实际填写。
 - `/new`：和当前角色开始新会话，旧会话进入记忆整理；长期记忆保留。
@@ -25,7 +27,7 @@
 | `/opt/chat-lab-telegram/releases/` | 可追溯源码、Docker部署文件和验证回执。 |
 | `/opt/chat-lab-telegram/current` | 当前部署目录符号链接。 |
 
-配置至少包含TELEGRAM_BOT_TOKEN、TELEGRAM_ALLOWED_USER_IDS、ARK_API_KEY。语音使用TELEGRAM_ASR_API_KEY及TELEGRAM_ASR_RESOURCE_ID。模型、思考关闭及独立记忆模型的公共默认值来自config/runtime.env。白名单最多16人；默认每日200次聊天调用，UTC日期；命令及已完成请求重放不重新调用模型。
+配置至少包含TELEGRAM_BOT_TOKEN、TELEGRAM_ALLOWED_USER_IDS、ARK_API_KEY。语音使用TELEGRAM_ASR_API_KEY及TELEGRAM_ASR_RESOURCE_ID。模型、思考关闭及独立记忆模型的公共默认值来自config/runtime.env。邀请模式白名单最多16人；公开模式不限制累计测试人数，同时最多驻留16个工作区，闲置工作区落盘后轮换加载，后台持续处理会话到期及记忆任务。默认每人每日200次聊天调用，UTC日期；命令及已完成请求重放不重新调用模型。
 
 ```sh
 ssh chatlab-telegram
@@ -57,3 +59,5 @@ docker compose -f /opt/chat-lab-telegram/current/deploy/telegram/compose.yaml up
 发送API超时可能已经送达，所以不保证平台端绝对一次；发送结果不明不自动重发，用户可用/resend取回已有答案。尚未实现群聊、跨网页账户绑定、分享、自动合并连发、在线邀请、自动备份调度和持续告警。
 
 服务器已实测：Docker内调用豆包ASR识别“你好，我想用人工智能学画画。”成功；使用实际ChatRuntime调用DeepSeek成功；Telegram真实收件与回复已有成功回执，健康检查healthy。容器初始观测约74MiB内存，320MiB为上限；后续并发及长期运行仍需观察。
+
+公开测试开关验证：非白名单新用户可聊、用户数据隔离、闲置工作区恢复原历史、后台整理被换出工作区，以及关闭公测后恢复白名单，共24项Telegram测试通过。

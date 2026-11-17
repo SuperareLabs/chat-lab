@@ -21,7 +21,7 @@ async function fixture(t, options = {}) {
     model: { name: 'mock', configured: true, thinking: 'disabled' },
     memoryModel: { name: 'memory-mock', configured: true }, memoryProvider: { async chat() { throw new Error('memory-test-offline'); } }, ...options.config };
   const db = new BotDatabase(join(dir, 'bot.sqlite'));
-  const core = new TelegramCore({ database: db, dataDir: dir, botId: 123456, allowedUsers: ['111', '222'], config, ...options });
+  const core = new TelegramCore({ database: db, dataDir: dir, botId: 123456, allowedUsers: ['111', '222'], ...options, config });
   const send = async (text, id, user = 111, extra) => { core.accept(update(id, text, user, extra)); await core.idle(); return db.db.prepare('SELECT body FROM outbox WHERE update_id=? ORDER BY id').all(id).map(r => JSON.parse(r.body)); };
   t.after(async () => { await core.stop(); db.close(); rmSync(dir, { recursive: true, force: true }); });
   return { dir, db, core, config, send, requests, count: () => count };
@@ -41,6 +41,54 @@ test('uninvited user only receives onboarding/id, cannot claim owner or incur mo
   const f = await fixture(t); const out = await f.send('/start', 1, 333);
   assert.match(out[0].text, /333/); await f.send('你好', 2, 333);
   assert.equal(f.count(), 0); assert.equal(f.core.workspaces.has('333'), false);
+});
+test('public testing admits users outside the whitelist and still isolates their workspaces', async t => {
+  const f = await fixture(t, { publicAccess: true });
+  await f.send('我的昵称是小熊', 1, 333);
+  await f.send('你好', 2, 444);
+  assert.equal(f.count(), 2);
+  assert.notEqual(f.core.workspaces.get('333').childId, f.core.workspaces.get('444').childId);
+  assert.ok(!JSON.stringify(f.requests.at(-1).messages).includes('我的昵称是小熊'));
+});
+test('public user capacity is a resident-store limit; idle users reopen with their original history', async t => {
+  const f = await fixture(t, { publicAccess: true, maxUsers: 1 });
+  await f.send('我想学画鲸鱼', 1, 333);
+  const first = f.core.workspaces.get('333').childId;
+  await f.send('你好', 2, 444);
+  assert.equal(f.core.workspaces.size, 1);
+  await f.send('刚才那个话题', 3, 333);
+  assert.equal(f.core.workspaces.get('333').childId, first);
+  assert.ok(JSON.stringify(f.requests.at(-1).messages).includes('我想学画鲸鱼'));
+  assert.equal(f.count(), 3);
+});
+test('turning public access off restores the whitelist without removing public users data', async t => {
+  const f = await fixture(t, { publicAccess: true });
+  await f.send('我的话要保留', 1, 333); const ws = f.core.workspaces.get('333');
+  f.core.publicAccess = false;
+  const denied = await f.send('第二句', 2, 333);
+  assert.match(denied[0].text, /邀请测试/); assert.equal(f.count(), 1);
+  assert.equal(ws.store.sql('SELECT count(*) n FROM messages').get().n, 2);
+  await f.send('你好', 3, 111); assert.equal(f.count(), 2);
+});
+test('maintenance extracts an idle evicted users session without requiring another message', async t => {
+  let now = new Date();
+  const f = await fixture(t, { publicAccess: true, maxUsers: 1, config: { clock: () => now } });
+  await f.send('我明天想学画鲸鱼', 1, 333);
+  await f.send('/start', 2, 444);
+  assert.equal(f.core.workspaces.has('333'), false);
+  now = new Date(now.getTime() + 16 * 60_000);
+  f.core.maintain();
+  const ws = f.core.workspaces.get('333');
+  await ws.runtime.worker;
+  assert.equal(ws.store.jobList(ws.childId, ws.state().roleId)[0].status, 'failed');
+  assert.equal(ws.store.sessions(ws.childId, ws.state().roleId)[0].status, 'closed');
+});
+test('public access requires an explicit valid configuration flag', async t => {
+  const f = await fixture(t);
+  const options = { config: f.config, database: f.db, api: {}, core: f.core };
+  assert.equal(new TelegramApp({ ...options, env: {} }).publicAccess, false);
+  assert.equal(new TelegramApp({ ...options, env: { TELEGRAM_PUBLIC_ACCESS: '1' } }).publicAccess, true);
+  assert.throws(() => new TelegramApp({ ...options, env: { TELEGRAM_PUBLIC_ACCESS: 'yes' } }), /0或1/);
 });
 test('explicit initialization has four roles, no demo profile or inferred age; data is private', async t => {
   const f = await fixture(t); await f.send('/start', 1);
