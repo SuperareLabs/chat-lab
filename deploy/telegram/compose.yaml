@@ -1,0 +1,26 @@
+services:
+  bot:
+    image: chat-lab-telegram:1.3.0
+    container_name: chat-lab-telegram
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 90s
+    env_file:
+      - /etc/chat-lab-telegram/bot.env
+    volumes:
+      - /var/lib/chat-lab-telegram:/var/lib/chat-lab-telegram
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    mem_limit: 320m
+    cpus: 0.75
+    pids_limit: 64
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: '2'
