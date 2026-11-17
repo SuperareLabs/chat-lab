@@ -7,6 +7,8 @@ services:
     stop_grace_period: 90s
     env_file:
       - /etc/chat-lab-telegram/bot.env
+    ports:
+      - '9988:9988'
     volumes:
       - /var/lib/chat-lab-telegram:/var/lib/chat-lab-telegram
     read_only: true

@@ -22,10 +22,61 @@ async function fixture(t, options = {}) {
     memoryModel: { name: 'memory-mock', configured: true }, memoryProvider: { async chat() { throw new Error('memory-test-offline'); } }, ...options.config };
   const db = new BotDatabase(join(dir, 'bot.sqlite'));
   const core = new TelegramCore({ database: db, dataDir: dir, botId: 123456, allowedUsers: ['111', '222'], ...options, config });
-  const send = async (text, id, user = 111, extra) => { core.accept(update(id, text, user, extra)); await core.idle(); return db.db.prepare('SELECT body FROM outbox WHERE update_id=? ORDER BY id').all(id).map(r => JSON.parse(r.body)); };
+  const ready = user => { if (options.requireOnboarding || !core.canUse(String(user))) return; const ws = core.workspace({ userId: String(user), displayName: '测试用户' }); ws.save({ ...ws.state(), onboardingComplete: true }); };
+  if (!options.requireOnboarding) for (const id of core.allowed) ready(id);
+  const send = async (text, id, user = 111, extra) => { ready(user); core.accept(update(id, text, user, extra)); await core.idle(); return db.db.prepare('SELECT body FROM outbox WHERE update_id=? ORDER BY id').all(id).map(r => JSON.parse(r.body)); };
+  const click = async (data, id, user = 111) => { ready(user); core.accept({ update_id: id, callback_query: { id: 'callback-' + id, data,
+    from: { id: user, first_name: '测试用户' }, message: { message_id: id, chat: { id: user, type: 'private' }, from: { is_bot: true }, date: Math.floor(Date.now()/1000) } } });
+    await core.idle(); return db.db.prepare('SELECT body FROM outbox WHERE update_id=? ORDER BY id').all(id).map(r => JSON.parse(r.body)); };
   t.after(async () => { await core.stop(); db.close(); rmSync(dir, { recursive: true, force: true }); });
-  return { dir, db, core, config, send, requests, count: () => count };
+  return { dir, db, core, config, send, click, requests, count: () => count };
 }
+
+test('first use requires a profile and role, with button callbacks and no setup conversation sent to the model', async t => {
+  const f = await fixture(t, { requireOnboarding: true });
+  const welcome = await f.send('/start', 1);
+  assert.match(welcome[0].text, /先建.*资料/);
+  await f.click(welcome[0].reply_markup.inline_keyboard[0][0].callback_data, 2);
+  await f.send('小桐', 3); await f.click('/setup enter_age', 4); const picker = await f.send('10', 5);
+  assert.equal(f.count(), 0);
+  const target = picker[0].reply_markup.inline_keyboard.flat().find(b => b.text.includes('鳄鱼爸爸'));
+  const done = await f.click(target.callback_data, 6);
+  assert.ok(done[0].reply_markup.keyboard);
+  const ws = f.core.workspaces.get('111');
+  assert.equal(ws.state().onboardingComplete, true); assert.equal(ws.store.child(ws.childId).name, '小桐'); assert.equal(ws.store.child(ws.childId).age, 10);
+  await f.send('你好', 7); assert.equal(f.count(), 1);
+  assert.equal(ws.store.sql('SELECT count(*) n FROM messages').get().n, 2);
+  assert.ok(!JSON.stringify(f.requests[0].messages).includes('怎么称呼你'));
+});
+test('first voice does not incur recognition or chat before setup; optional age does not unlock adult roles', async t => {
+  let recognitions = 0;
+  const f = await fixture(t, { requireOnboarding: true, voiceLoader: async () => 'eA==', asr: async () => { recognitions++; return '你好'; } });
+  await f.send('', 1, 111, { voice: { duration: 1, file_id: 'x' } });
+  assert.equal(recognitions, 0); assert.equal(f.count(), 0);
+  await f.click('/setup create', 2); await f.click('/setup use_name', 3); const picker = await f.click('/setup skip_age', 4);
+  const lin = picker[0].reply_markup.inline_keyboard.flat().find(b => b.text.includes('林晚晴'));
+  const blocked = await f.click(lin.callback_data, 5); assert.match(blocked[0].text, /成年人/);
+  assert.equal(f.core.workspaces.get('111').state().onboardingComplete, false);
+});
+test('profile buttons change name and age without replacing identity or losing history; cancel is a button', async t => {
+  const f = await fixture(t); await f.send('我想画鲸鱼', 1);
+  const ws = f.core.workspaces.get('111'), profileId = ws.childId;
+  const card = await f.send('👤 我的资料', 2); assert.ok(card[0].reply_markup.inline_keyboard);
+  await f.click('/useredit name', 3); await f.send('改过的称呼', 4);
+  await f.click('/useredit age', 5); await f.send('22', 6);
+  assert.equal(ws.childId, profileId); assert.equal(ws.store.child(profileId).name, '改过的称呼'); assert.equal(ws.store.child(profileId).age, 22);
+  await f.click('/useredit name', 7); await f.click('/cancel', 8);
+  assert.equal(ws.state().draft, undefined); await f.send('接着说刚才的', 9);
+  assert.equal(f.count(), 2); assert.ok(JSON.stringify(f.requests.at(-1).messages).includes('我想画鲸鱼'));
+});
+test('old used workspaces are recognized as already onboarded after upgrade', async t => {
+  const f = await fixture(t); await f.send('旧对话', 1);
+  const ws = f.core.workspaces.get('111'), old = ws.state(); delete old.onboardingComplete; ws.save(old);
+  await ws.runtime.stop(); ws.store.close(); f.core.workspaces.delete('111');
+  const reopened = f.core.workspace({ userId: '111', displayName: '测试用户' });
+  assert.equal(reopened.state().onboardingComplete, true);
+  assert.equal(reopened.childId, ws.childId);
+});
 
 test('Telegram rejects groups, bots and forged private identity; handles callback actor', () => {
   const u = update(1, 'hi'); assert.equal(privateUpdate(u).userId, '111');
@@ -179,8 +230,10 @@ test('voice transcribes straight into chat, persists the original voice source, 
   const f = await fixture(t, { voiceLoader: async () => 'YXVkaW8=', asr: async () => { asr++; return '我想学画画'; } });
   const out = await f.send('', 1, 111, { voice: { duration: 2, file_id: 'a', file_size: 4 } });
   assert.equal(asr, 1); assert.equal(f.count(), 1);
-  assert.deepEqual(out.map(m => m.text), ['在', '第二段\n\n仍是同一条。']);
-  assert.ok(out.every(m => !m.reply_markup));
+  assert.deepEqual(out.map(m => m.text), ['识别为：我想学画画', '在', '第二段\n\n仍是同一条。']);
+  assert.deepEqual(out[0].reply_parameters, { message_id: 1, allow_sending_without_reply: true });
+  assert.equal(out[0].disable_notification, true);
+  assert.ok(out.every(m => !m.reply_markup?.inline_keyboard));
   assert.ok(JSON.stringify(f.requests[0].messages).includes('我想学画画'));
   const row = f.db.db.prepare('SELECT * FROM inbox WHERE id=1').get();
   assert.equal(row.text, '我想学画画'); assert.equal(JSON.parse(row.source).kind, 'voice');
@@ -199,6 +252,37 @@ test('voice stays with the preceding role when a role switch arrives during reco
   const run = ws.store.sql('SELECT agent_id FROM runs').get();
   assert.equal(ws.store.agentRecord(run.agent_id).name, '鳄鱼爸爸');
 });
+test('quoted transcription is available before generation finishes and only the transcription expires', async t => {
+  let release, started;
+  const gate = new Promise(resolve => { release = resolve; });
+  const generating = new Promise(resolve => { started = resolve; });
+  const f = await fixture(t, { voiceLoader: async () => 'eA==', asr: async () => '我想画鲸鱼',
+    config: { provider: { async chat() { started(); await gate; return answer(['想画哪种鲸鱼？']); } } } });
+  f.core.accept(update(1, '', 111, { voice: { duration: 2, file_id: 'a' } }));
+  await generating;
+  try {
+    const transcript = f.db.claim();
+    assert.equal(transcript.body.text, '识别为：我想画鲸鱼');
+    assert.deepEqual(transcript.body.reply_parameters, { message_id: 1, allow_sending_without_reply: true });
+    f.db.receipt({ id: transcript.id, state: 'sent', telegramId: 101 });
+    assert.deepEqual(f.db.db.prepare('SELECT message_id FROM message_cleanup').all().map(r=>r.message_id), [101]);
+  } finally { release(); }
+  await f.core.idle();
+  const reply = f.db.claim(); assert.equal(reply.body.text, '想画哪种鲸鱼？');
+  assert.equal(reply.body.reply_parameters, undefined);
+  f.db.receipt({ id: reply.id, state: 'sent', telegramId: 102 });
+  assert.deepEqual(f.db.db.prepare('SELECT message_id FROM message_cleanup').all().map(r=>r.message_id), [101]);
+});
+test('transcription outbox remains idempotent across a saved-text restart gap and preserves its delivery receipt', async t => {
+  const f = await fixture(t, { voiceLoader: async () => 'eA==', asr: async () => '识别出来的文字' });
+  await f.send('', 1, 111, { voice: { duration: 2, file_id: 'a' } });
+  const transcript = f.db.claim(); f.db.receipt({ id: transcript.id, state: 'sent', telegramId: 101 });
+  const row = f.db.db.prepare('SELECT * FROM inbox WHERE id=1').get();
+  f.db.queueTranscription(row, row.text, 1);
+  assert.equal(f.db.db.prepare('SELECT count(*) n FROM outbox WHERE update_id=1 AND logical_index=-1').get().n, 1);
+  assert.equal(f.db.db.prepare('SELECT state FROM outbox WHERE logical_index=-1').get().state, 'sent');
+  assert.equal(f.count(), 1);
+});
 test('transcription resumes after a restart gap without recognizing the voice a second time', async t => {
   let asr = 0;
   const f = await fixture(t, { voiceLoader: async () => 'eA==', asr: async () => { asr++; return '不能再识别'; } });
@@ -209,7 +293,7 @@ test('transcription resumes after a restart gap without recognizing the voice a 
   f.core.kick('111'); await f.core.idle();
   assert.equal(asr, 0); assert.equal(f.count(), 1);
   assert.ok(JSON.stringify(f.requests[0].messages).includes('/forget'));
-  assert.ok(!f.db.db.prepare('SELECT body FROM outbox WHERE update_id=2').all().some(r => JSON.parse(r.body).reply_markup));
+  assert.ok(!f.db.db.prepare('SELECT body FROM outbox WHERE update_id=2').all().some(r => JSON.parse(r.body).reply_markup?.inline_keyboard));
 });
 test('old voice confirmation state does not trap new text or voice in a confirmation flow', async t => {
   const f = await fixture(t); await f.send('/start', 1);

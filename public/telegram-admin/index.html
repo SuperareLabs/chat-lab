@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ChatLab · Telegram 用户</title><link rel="stylesheet" href="/admin.css"><script type="module" src="/admin.js"></script></head>
+<body>
+<header><a class="brand" href="/">C<span>ChatLab</span><small>TELEGRAM</small></a><div class="header-right"><span id="health" class="badge">管理台</span><button id="logout" hidden class="quiet">退出</button></div></header>
+<main>
+<section id="login" class="login-card"><div class="eyebrow">USER ACCESS</div><h1>用户与白名单</h1><p>输入管理口令，查看接入情况。</p><form id="login-form"><label for="password">管理口令</label><input id="password" type="password" autocomplete="current-password" required><button type="submit" class="primary">进入管理页</button></form></section>
+<section id="dashboard" hidden>
+<div class="title-row"><div><div class="eyebrow">TELEGRAM / ACCESS</div><h1>用户与白名单</h1><p>谁来过、最近有没有互动，都在这里。</p></div><a class="bot-link" href="https://t.me/CrocoDaddy_ChatLabBot" target="_blank" rel="noreferrer">打开机器人 ↗</a></div>
+<div class="stats"><article><span>累计接入用户</span><strong id="total">0</strong><small>发过消息的独立 Telegram 账号</small></article><article><span>近 5 分钟互动</span><strong id="active">0</strong><small>近期向机器人发过消息</small></article><article><span>今天互动</span><strong id="today">0</strong><small>按北京时间统计</small></article><article><span>白名单人数</span><strong id="whitelist-count">0</strong><small>开启限制后可继续使用的账号</small></article></div>
+<section class="mode-card"><div><span id="mode" class="badge"></span><h2 id="mode-title"></h2><p id="mode-detail"></p></div><button id="mode-toggle" class="secondary"></button></section>
+<section class="panel"><div class="panel-top"><div><h2>接入用户</h2><span id="updated" class="muted">每 5 秒自动刷新</span></div><div class="tools"><input id="search" type="search" placeholder="搜索昵称、用户名或 ID" aria-label="搜索用户"><button id="refresh" class="quiet">刷新</button></div></div>
+<div class="table-wrap"><table><thead><tr><th>用户</th><th>Telegram ID</th><th>首次接入</th><th>最近互动</th><th>互动次数</th><th>当前访问</th><th>白名单</th></tr></thead><tbody id="users"></tbody></table><p id="empty" hidden>还没有匹配的用户。</p></div>
+<div class="panel-bottom">这里显示与机器人的互动记录，不代表 Telegram 的实时在线状态。不会展示私人聊天内容。</div></section>
+<section class="panel whitelist-panel"><div><h2>提前加入白名单</h2><p>对方还没来过，也可以先用数字 ID 开通。</p><form id="add-form"><input id="user-id" inputmode="numeric" pattern="[1-9][0-9]{0,15}" maxlength="16" placeholder="Telegram 数字 ID" aria-label="Telegram 数字 ID" required><button class="secondary" type="submit">加入白名单</button></form></div><div><span class="muted">当前白名单</span><div id="whitelist" class="chips"></div></div></section>
+</section>
+<div id="notice" role="status" hidden></div>
+<dialog id="mode-dialog" aria-labelledby="mode-dialog-title"><h2 id="mode-dialog-title">切换访问模式</h2><p id="mode-dialog-detail"></p><div class="dialog-actions"><button id="mode-cancel" type="button">取消</button><button id="mode-confirm" type="button" class="primary">确认切换</button></div></dialog>
+</main>
+</body></html>

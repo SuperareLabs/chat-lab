@@ -4,6 +4,7 @@ COPY package.json telegram.mjs ./
 COPY lib/ ./lib/
 COPY config/ ./config/
 COPY character-packs/ ./character-packs/
+COPY public/telegram-admin/ ./public/telegram-admin/
 USER node
 ENV NODE_OPTIONS=--max-old-space-size=160
 ENV TELEGRAM_DATA_DIR=/var/lib/chat-lab-telegram
