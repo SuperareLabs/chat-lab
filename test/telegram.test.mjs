@@ -41,7 +41,7 @@ test('first use requires a profile and role, with button callbacks and no setup 
   assert.equal(f.count(), 0);
   const target = picker[0].reply_markup.inline_keyboard.flat().find(b => b.text.includes('鳄鱼爸爸'));
   const done = await f.click(target.callback_data, 6);
-  assert.ok(done[0].reply_markup.keyboard);
+  assert.deepEqual(done[0].reply_markup, { remove_keyboard: true });
   const ws = f.core.workspaces.get('111');
   assert.equal(ws.state().onboardingComplete, true); assert.equal(ws.store.child(ws.childId).name, '小桐'); assert.equal(ws.store.child(ws.childId).age, 10);
   await f.send('你好', 7); assert.equal(f.count(), 1);
@@ -154,6 +154,16 @@ test('real runtime receives messages contract and thinking disabled; output rema
   assert.equal(f.requests[0].thinking, 'disabled'); assert.equal(f.requests[0].responseFormat.type, 'json_object');
   await f.send('你好', 1); assert.equal(f.count(), 1);
   const ws = f.core.workspaces.get('111'); assert.equal(ws.store.sql('SELECT count(*) n FROM messages').get().n, 2);
+});
+test('normal chat and home/role replies remove the legacy six-button keyboard instead of recreating it', async t => {
+  const f=await fixture(t);
+  for(const [index,text] of ['你好','/start','/role 大肥鱼'].entries()) {
+    const out=await f.send(text,index+1);
+    assert.equal(out[0].reply_markup.remove_keyboard,true);
+    assert.ok(out.every(message=>!message.reply_markup?.keyboard));
+  }
+  const home=await f.send('/start',4);assert.match(home[0].text,/左下角菜单/);
+  const picker=await f.send('/roles',5);assert.ok(picker[0].reply_markup.inline_keyboard);
 });
 test('user identities and same-name private roles never share workspace or history', async t => {
   const f = await fixture(t);
