@@ -177,10 +177,11 @@ test('localhost navigation works; cross-site API, scope errors and disabled tool
   assert.notEqual(benny.card.personality, bennySoul.personality);
   assert.equal(benny.card.dailyLife, undefined);
   assert.equal(pinecone.card.theme, 'amber');
-  assert.equal(xiaoman.name, '林小满');
+  assert.equal(xiaoman.name, '苏清月');
+  assert.equal(xiaoman.minimumAge, 18);
   assert.equal(xiaoman.card.voice, undefined, 'public defaults have no private reference audio');
   const xiaomanPrompt = await f.json('/api/agents/lin-xiaoman/prompt');
-  assert.match(xiaomanPrompt.role, /林小满/);
+  assert.match(xiaomanPrompt.role, /【名称】苏清月/);
   assert.match(xiaomanPrompt.role, /【角色设定】/);
   assert.equal(xiaomanPrompt.definition, xiaoman.definition);
   assert.doesNotMatch(xiaomanPrompt.system, /guhan-reference|实时语音尚未接入/);
