@@ -62,6 +62,94 @@ async function client(f, initial = null) {
     newSession() { return send('POST', '/api/sessions', scope); } };
 }
 
+function eventFixture() {
+  return fixture({ memoryProvider: { async chat({ messages }) {
+    const { userMessages, memoryIndex } = JSON.parse(messages[1].content);
+    const plan = { creates: [], updates: [], mentions: [], retractions: [], overview: null };
+    for (const message of userMessages) {
+      const [operation, subject] = message.text.split('|');
+      const sourceMessageIds = [message.id];
+      if (operation === '经历' || operation === '偏好') {
+        plan.creates.push({ sourceMessageIds, kind: operation === '经历' ? 'event' : 'understanding',
+          topics: [subject], summary: subject, detail: { notes: '仅保存详情，不直接带入模型' } });
+      } else if (operation === '再提' || operation === '撤回') {
+        const memoryId = memoryIndex.find(memory => memory.summary === subject)?.id;
+        assert.ok(memoryId);
+        if (operation === '再提') plan.mentions.push({ memoryId, sourceMessageIds });
+        else plan.retractions.push({ memoryId, sourceMessageIds, reason: '用户要求撤回该条' });
+      }
+    }
+    return { content: JSON.stringify(plan), receipt };
+  } } });
+}
+
+function background(input) {
+  assert.match(input.messages[1].content, /^【背景资料/);
+  return JSON.parse(input.messages[1].content.split('\n')[1]);
+}
+
+test('browser chat adds only three event summaries ordered by actual mention while keeping the user overview', async () => {
+  const f = eventFixture(), a = await client(f);
+  for (const subject of ['鲸鱼海报', '野餐安排', '温室计划', '陶艺进展', '周末远足']) {
+    await a.chat(`经历|${subject}|这段会话的原话`);
+    f.advance(60_000);
+  }
+  await a.chat('偏好|喜欢先听结论');
+  await a.newSession();
+  f.advance(3 * 24 * 60 * 60_000);
+  await a.chat('再提|鲸鱼海报');
+  f.advance(60_000);
+  await a.chat('撤回|温室计划');
+  await a.newSession();
+  const resumed = await a.chat('hello');
+  const input = f.calls.chat.at(-1);
+  const data = background(input);
+  assert.deepEqual(data.recentEvents, [
+    { summary: '鲸鱼海报', lastMentionedAt: '2026-11-18T03:05:00.000Z' },
+    { summary: '周末远足', lastMentionedAt: '2026-11-15T03:04:00.000Z' },
+    { summary: '陶艺进展', lastMentionedAt: '2026-11-15T03:03:00.000Z' },
+  ]);
+  assert.equal(data.userOverview, '喜欢先听结论');
+  assert.equal(input.messages.length, 3);
+  assert.equal(input.messages.at(-1).content, 'hello');
+  assert.match(input.messages[0].content, /对方正在聊同一件事，或这句话需要旧事才能理解时/);
+  assert.doesNotMatch(input.messages[1].content, /这段会话的原话|仅保存详情|温室计划|野餐安排/);
+  const context = JSON.parse(resumed.snapshot.tables.sessions.find(row => row.status === 'open').context);
+  assert.deepEqual(context.recentEvents, data.recentEvents);
+  assert.deepEqual(background({ messages: context.requestMessages }), data);
+});
+
+test('event summaries are isolated by browser user and role and disappear when the scope is cleared', async () => {
+  const f = eventFixture(), a = await client(f);
+  const original = { ...a.scope };
+  await a.chat('经历|第一位用户的计划');
+  await a.newSession();
+  a.select({ ...original, agentId: seeds[1].id });
+  await a.chat('你好');
+  assert.equal(background(f.calls.chat.at(-1)).recentEvents, undefined);
+  const other = await a.send('POST', '/api/children', { name: '另一人', age: 26 });
+  a.select({ ...original, childId: other.value.child.id });
+  await a.chat('你好');
+  assert.equal(background(f.calls.chat.at(-1)).recentEvents, undefined);
+  a.select(original);
+  await a.chat('你好');
+  assert.deepEqual(background(f.calls.chat.at(-1)).recentEvents.map(item => item.summary), ['第一位用户的计划']);
+  await a.send('POST', '/api/memory/clear', original);
+  await a.chat('又见面了');
+  assert.equal(background(f.calls.chat.at(-1)).recentEvents, undefined);
+});
+
+test('a new browser session starts with available memories and never backfills unprocessed conversation text', async () => {
+  const f = fixture({ memoryModel: { configured: false } }), a = await client(f);
+  await a.chat('蓝鲸海报的旧会话原话');
+  f.advance(20 * 60_000);
+  await a.chat('hello');
+  const input = f.calls.chat.at(-1);
+  assert.equal(background(input).recentEvents, undefined);
+  assert.doesNotMatch(JSON.stringify(input.messages), /蓝鲸海报的旧会话原话/);
+  assert.ok(a.snapshot.tables.jobs.some(job => job.status === 'queued'));
+});
+
 function sharedCatalog() {
   const data = { revision: 1, agents: [{ id: 'shared-chat-role', name: '大家的搭子', definition: '短句自然接话。',
     revision: 1, version: 'public-v1', createdAt: '2026-11-15T02:00:00.000Z', updatedAt: '2026-11-15T02:00:00.000Z',

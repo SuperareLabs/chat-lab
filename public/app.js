@@ -771,6 +771,7 @@ function renderContext(context) {
   const time = context.localTime;
   const tools = context.tools || [];
   const memories = context.recentMemories || [];
+  const events = Array.isArray(context.recentEvents) ? context.recentEvents : null;
   const history = context.history || [];
   const calls = context.toolCalls || [];
   const meta = node('div', 'context-meta');
@@ -779,21 +780,26 @@ function renderContext(context) {
   if (Number.isFinite(context.firstDeltaMs)) meta.append(node('span', 'context-chip', `首字 ${context.firstDeltaMs} ms`));
   const summaryList = memories.length ? node('ul', 'context-memory-list') : null;
   for (const item of memories) summaryList.append(node('li', '', `${dateLabel(item.mentionedOn)} · ${item.summary}`));
+  const eventList = events?.length ? node('ul', 'context-memory-list') : null;
+  for (const item of events ?? []) eventList.append(node('li', '', `${dateTime(item.lastMentionedAt)} · ${item.summary}`));
   const toolNames = tools.length ? node('div', 'context-meta') : node('p', 'quiet', '本轮没有开放工具。');
   for (const tool of tools) toolNames.append(node('span', 'context-chip', tool.function?.name || tool.name || String(tool)));
   const sections = [meta,
     section('本轮注入', dataGrid([
       ['当地时间', typeof time === 'string' ? time : [time?.localDate, time?.localTime, time?.timezone].filter(Boolean).join(' ')],
+      ...(Number.isInteger(context.recentConversationTurns)
+        ? [['最近对话参考', `${context.recentConversationTurns} 轮已结束会话的原文摘录`]] : []),
       ...profileRows(context.userProfile || context.childProfile),
     ]), first || open.has('本轮注入')),
     section('用户概括', contextOverviewBody(context.userOverview), first || open.has('用户概括')),
+    ...(events ? [section('近期经历与计划', eventList ?? node('p', 'quiet', '本轮还没有已整理的经历与计划。'), open.has('近期经历与计划'), events.length)] : []),
     ...(summaryList ? [section('历史上下文中的摘要', summaryList, open.has('历史上下文中的摘要'), memories.length)] : []),
     section('记忆加载', node('p', 'quiet', '具体记忆由聊天 Agent 按话题搜索；实际读入内容见下方工具调用和原始模型输入。'), open.has('记忆加载')),
     section('固定提示词', pretty(context.system || ''), open.has('固定提示词')),
     section('会话消息', pretty(history), open.has('会话消息'), history.length),
     section('可用工具', [toolNames, ...(tools.length ? [pretty(tools)] : [])], open.has('可用工具'), tools.length),
     toolCallSection(calls, open.has('工具调用')),
-    section('原始模型输入', [pretty(context.requestMessages || []), ...(context.modelRequests?.length ? [
+    section('原始模型输入', [...(context.recentConversationTurns ? [node('p', 'quiet', '近期对话摘录已计入本轮输入，审计记录保留注入轮数。')] : []), pretty(context.requestMessages || []), ...(context.modelRequests?.length ? [
       node('p', 'inspector-label', '模型请求统计'), pretty(context.modelRequests),
     ] : [])], open.has('原始模型输入')),
   ];
