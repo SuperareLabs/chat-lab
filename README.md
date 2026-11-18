@@ -1,6 +1,8 @@
 # 全Agent轻量聊天实验台
 
-当前封版 **1.3.0**，发布分支 `release1.3.0`，固定标签 `v1.3.0`。云聊天入口：[成都聊天实验台](http://8.137.116.27:9988/)，继续使用现有服务器门禁；本机试聊入口：[localhost:4334](http://localhost:4334/)，仅监听本机并免登录。
+`release1.3.0` 用于本地网页试聊。角色、提示词和记忆机制先在这里验证，默认入口为 [localhost:4334](http://localhost:4334/)。
+
+`release1.3.0-telegram` 用于在 Telegram 体验已经验证的聊天能力，入口为 [CrocoDaddy ChatLab Bot](https://t.me/CrocoDaddy_ChatLabBot)。成都网页版已停运，原部署记录见[成都网页版部署归档](docs/deployment.md)。
 
 发布分支默认展示 **苏清月、鳄鱼爸爸、大肥鱼、林晚晴** 四位角色。[苏清月](docs/lin-xiaoman-role-setting.md)沿用林小满的角色 ID，日常默认发一条短消息。鳄鱼爸爸补齐AI学习指导、结果修改与事实核实的多轮接法；日常保持默认1条、需要时2～3条，每条通常5～20字、最多30字。完整角色正文和真实模型试聊见[鳄鱼爸爸提示词](docs/croco-daddy-role-setting.md)、[AI导师试聊记录](docs/croco-ai-mentor-trials.md)。其他历史角色隐藏归档，已有记录保留。
 
@@ -10,7 +12,7 @@
 
 访客资料、聊天、记忆、私人角色、草稿与用量仍保存在当前浏览器的IndexedDB；新建公共角色保存在独立服务端角色库。更新不重置现有工作区、公共角色或私人修改，不导入开发者的个人资料。Nuwa原文人物包作为归档资料保留，[原文来源和授权](character-packs/nuwa-20261116/README.md)不等于这些人物仍在默认角色列表展示。
 
-[1.3.0发布说明](docs/releases/v1.3.0.md)记录改动与验证边界；[部署说明](docs/deployment.md)记录云端目录、配置、备份与回滚。`version1.2.0`和`v1.2.0`保留为历史版本，不覆盖旧标签。
+[1.3.0 发布说明](docs/releases/v1.3.0.md)记录封版和本地实验分支后续改动。历史版本以已有标签为准。
 
 ## 本地启动
 
