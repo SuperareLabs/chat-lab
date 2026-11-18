@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BotDatabase } from '../lib/telegram/database.mjs';
-import { TelegramCore, pendingConversationBridge } from '../lib/telegram/core.mjs';
+import { TelegramCore } from '../lib/telegram/core.mjs';
 import { TelegramApi, privateUpdate, splitTelegramText } from '../lib/telegram/platform.mjs';
 import { TelegramApp } from '../lib/telegram/app.mjs';
 import { createVoiceRecognizer } from '../lib/telegram/asr.mjs';
@@ -144,7 +144,8 @@ test('public access requires an explicit valid configuration flag', async t => {
 test('explicit initialization has four roles, no demo profile or inferred age; data is private', async t => {
   const f = await fixture(t); await f.send('/start', 1);
   const ws = f.core.workspaces.get('111');
-  assert.deepEqual(f.core.visible(ws).map(a => a.name).sort(), ['大肥鱼','林小满','林晚晴','鳄鱼爸爸'].sort());
+  assert.deepEqual(f.core.visible(ws).map(a => a.name).sort(), ['大肥鱼','苏清月','林晚晴','鳄鱼爸爸'].sort());
+  assert.equal(ws.store.agentRecord('lin-xiaoman').name, '苏清月');
   assert.equal(ws.store.children().length, 1); assert.equal(ws.store.child(ws.childId).age, null);
   assert.equal(statSync(join(f.dir, 'users', '123456', '111.sqlite')).mode & 0o777, 0o600);
 });
@@ -192,25 +193,65 @@ test('private create/edit is atomic across update replay; default roles cannot b
   assert.equal(ws.store.agentRecord(roleId).definition, '新的完整设定'); assert.equal(ws.state().roleId, roleId);
   await f.send('/role 鳄鱼爸爸', 6); const out = await f.send('/deleterole', 7); assert.match(out[0].text, /不能删除/);
 });
-test('new session queues extraction; failed/pending extraction bridges original history until forget', async t => {
+test('a failed extraction stays visible without putting old text back into a new chat', async t => {
   const f = await fixture(t); await f.send('明天我要去画鲸鱼', 1); const ws = f.core.workspaces.get('111'), roleId = ws.state().roleId;
   await f.send('/new', 2); await ws.runtime.worker;
   assert.equal(ws.store.jobList(ws.childId, roleId)[0].status, 'failed');
-  assert.ok(pendingConversationBridge(ws.store, ws.childId, roleId, ws.runtime.now()).some(m => m.text.includes('画鲸鱼')));
-  await f.send('你记得我接下来干嘛吗', 3); assert.ok(f.requests.at(-1).messages[0].content.includes('明天我要去画鲸鱼'));
-  const confirm = await f.send('/forget', 4); const callback = confirm[0].reply_markup.inline_keyboard[0][0].callback_data;
-  await f.send(callback, 5); assert.deepEqual(pendingConversationBridge(ws.store, ws.childId, roleId, ws.runtime.now()), []);
-  assert.ok(ws.store.sessions(ws.childId, roleId).length > 0);
-  await f.send('重新开始', 6); assert.ok(!JSON.stringify(f.requests.at(-1).messages).includes('明天我要去画鲸鱼'));
+  await f.send('我们刚才聊了啥', 3);
+  assert.doesNotMatch(JSON.stringify(f.requests.at(-1).messages), /明天我要去画鲸鱼/);
+  const memory = await f.send('/memory', 4);
+  assert.match(memory[0].text, /暂无已整理的经历与计划/);
+  assert.match(memory[0].text, /整理任务：failed/);
+  const history = await f.send('/history', 5);
+  assert.match(history[0].text, /明天我要去画鲸鱼/);
 });
-test('memory bridge never crosses role/user scopes or successful extraction', async t => {
-  const f = await fixture(t); await f.send('我的私事', 1); await f.send('/new', 2);
-  const ws = f.core.workspaces.get('111'); await ws.runtime.worker;
-  const roleId = ws.state().roleId;
-  assert.deepEqual(pendingConversationBridge(ws.store, 'another', roleId, ws.runtime.now()), []);
-  assert.deepEqual(pendingConversationBridge(ws.store, ws.childId, 'another', ws.runtime.now()), []);
-  ws.store.sql("UPDATE jobs SET status='succeeded'").run();
-  assert.deepEqual(pendingConversationBridge(ws.store, ws.childId, roleId, ws.runtime.now()), []);
+test('chat and memory menu use the same latest three event summaries with role and user isolation', async t => {
+  let now = new Date();
+  const background = input => JSON.parse(input.messages[1].content.split('\n')[1]);
+  const f = await fixture(t, { config: { clock: () => now, memoryProvider: { async chat({ messages }) {
+    const { userMessages, memoryIndex } = JSON.parse(messages[1].content);
+    const creates = [], mentions = [];
+    for (const message of userMessages) {
+      const [action, summary] = message.text.split('|');
+      const sourceMessageIds = [message.id];
+      if (action === '记录') creates.push({ kind: 'event', summary, topics: [summary], sourceMessageIds,
+        detail: { notes: '详细说明只留在记忆库' } });
+      if (action === '再提') mentions.push({ memoryId: memoryIndex.find(item => item.summary === summary).id, sourceMessageIds });
+    }
+    return { content: JSON.stringify({ creates, updates: [], mentions, retractions: [], overview: null }) };
+  } } } });
+  const ws = f.core.workspaces.get('111'), roleId = ws.state().roleId;
+  let updateId = 0;
+  for (const summary of ['画鲸鱼', '周末出门', '继续搭塔', '聊了 AI 查资料的用法']) {
+    await f.send(`记录|${summary}|旧会话原话`, ++updateId);
+    now = new Date(now.getTime() + 60_000);
+  }
+  await f.send('/new', ++updateId);
+  await ws.runtime.worker;
+  await f.send('再提|画鲸鱼', ++updateId);
+  await f.send('/new', ++updateId);
+  await ws.runtime.worker;
+  await f.send('你好', ++updateId);
+  const input = f.requests.at(-1);
+  const expected = ['画鲸鱼', '聊了 AI 查资料的用法', '继续搭塔'];
+  assert.deepEqual(background(input).recentEvents.map(item => item.summary), expected);
+  assert.match(input.messages[0].content, /不要从这些摘要里挑旧事来开话题/);
+  assert.doesNotMatch(JSON.stringify(input.messages), /旧会话原话|详细说明只留在记忆库|周末出门/);
+  const menu = await f.send('/memory', ++updateId);
+  const recent = menu[0].text.split('\n\n').find(block => block.startsWith('最近经历与计划'));
+  assert.deepEqual(recent.split('\n').slice(1), expected.map(item => '· ' + item));
+  assert.equal(menu[0].text.match(/画鲸鱼/g).length, 1);
+  await f.send('另一位用户打招呼', ++updateId, 222);
+  assert.equal(background(f.requests.at(-1)).recentEvents, undefined);
+  await f.send('/role 大肥鱼', ++updateId);
+  await f.send('切换角色后打招呼', ++updateId);
+  assert.equal(background(f.requests.at(-1)).recentEvents, undefined);
+  await f.send('/role 鳄鱼爸爸', ++updateId);
+  const confirm = await f.send('/forget', ++updateId);
+  await f.click(confirm[0].reply_markup.inline_keyboard[0][0].callback_data, ++updateId);
+  assert.ok(ws.store.sessions(ws.childId, roleId).length > 0);
+  const cleared = await f.send('/memory', ++updateId);
+  assert.match(cleared[0].text, /暂无已整理的经历与计划/);
 });
 test('model-result/outbox crash gap recovers from saved run, not another model request', async t => {
   const f = await fixture(t); await f.send('测试断电', 1); const ws = f.core.workspaces.get('111');
