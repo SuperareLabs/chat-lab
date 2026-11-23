@@ -23,6 +23,8 @@ const state = {
   catalogRevision: null, catalogAvailable: false, catalogAgents: [],
 };
 const selectionKey = 'croco-lab-v1.selection';
+const workspaceModeKey = 'croco-lab-v1.workspace-mode';
+let workspaceMode = 'demo';
 let workspaceClient = null;
 let localSelection = {};
 let bootstrapSerial = 0;
@@ -1475,20 +1477,25 @@ function installListeners() {
     }
   });
   const inspectors = ['context', 'memory'];
+  const wideWorkspace = matchMedia('(min-width: 1100px)');
   let openInspector;
-  const setInspector = next => {
+  const setInspector = (next, moveFocus = true) => {
     const previous = openInspector;
-    openInspector = next;
+    const developer = workspaceMode === 'developer';
+    const docked = developer && wideWorkspace.matches;
+    openInspector = developer && !docked ? next : undefined;
     for (const name of inspectors) {
-      ui[`${name}-panel`].hidden = name !== next;
-      ui[`${name}-toggle`].setAttribute('aria-expanded', String(name === next));
+      const visible = docked || name === openInspector;
+      ui[`${name}-panel`].hidden = !visible;
+      ui[`${name}-toggle`].setAttribute('aria-expanded', String(visible));
     }
     const footer = ui['session-usage']?._usageFooter;
-    if (next !== 'context' && footer) {
+    if (ui['context-panel'].hidden && footer) {
       footer.pinned = null;
       hideUsageTooltip(footer);
     }
-    if (next) el(`${next}-close`).focus({ preventScroll: true });
+    if (!moveFocus) return;
+    if (openInspector) el(`${openInspector}-close`).focus({ preventScroll: true });
     else if (previous) ui[`${previous}-toggle`].focus({ preventScroll: true });
   };
   for (const name of inspectors) {
@@ -1498,6 +1505,25 @@ function installListeners() {
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && openInspector && !document.querySelector('dialog[open]')) setInspector();
   });
+  wideWorkspace.addEventListener('change', () => setInspector(undefined, false));
+
+  const modeButtons = { demo: el('mode-demo'), developer: el('mode-developer') };
+  const setMode = mode => {
+    workspaceMode = mode;
+    document.body.dataset.workspaceMode = mode;
+    for (const [name, button] of Object.entries(modeButtons)) button.setAttribute('aria-pressed', String(name === mode));
+    setInspector(undefined, false);
+  };
+  for (const [mode, button] of Object.entries(modeButtons)) {
+    button.addEventListener('click', () => {
+      setMode(mode);
+      try { localStorage.setItem(workspaceModeKey, mode); } catch { /* The current view still works without storage. */ }
+    });
+  }
+  let savedMode;
+  try { savedMode = localStorage.getItem(workspaceModeKey); } catch { /* Use the default view. */ }
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+  setMode(Object.hasOwn(modeButtons, savedMode) ? savedMode : local ? 'developer' : 'demo');
 }
 
 async function loadState(data, { preferDefaultAgent = false } = {}) {
@@ -1577,7 +1603,7 @@ async function applyAgentChange(savedAgent, { created }) {
 }
 
 const agentEditor = installAgentEditor({
-  canOpen: () => !state.busy && !state.sending && !state.editorSaving && !state.pendingMessages.length,
+  canOpen: () => workspaceMode === 'developer' && !state.busy && !state.sending && !state.editorSaving && !state.pendingMessages.length,
   onSaved: applyAgentChange,
   onBusyChanged: value => { state.editorSaving = value; updateControls(); },
   readAgent: readEditableAgent,
@@ -1589,7 +1615,7 @@ const agentEditor = installAgentEditor({
 
 let agentDeleteTarget = null;
 function openAgentDeletion(id) {
-  if (state.busy || state.sending || state.editorSaving || state.pendingMessages.length) return;
+  if (workspaceMode !== 'developer' || state.busy || state.sending || state.editorSaving || state.pendingMessages.length) return;
   const selected = state.agents.find(item => item.id === id);
   if (!selected || !agentPermissions(selected).canDelete) return;
   agentDeleteTarget = { ...selected };
@@ -1638,6 +1664,7 @@ const syncAgentGalleryRoute = installAgentGallery({
     (agentDisplayOrder.get(a.id) ?? 2) - (agentDisplayOrder.get(b.id) ?? 2)),
   getSelectedId: () => state.agentId,
   getDataVersion: () => state.dataVersion,
+  isDeveloperMode: () => workspaceMode === 'developer',
   requestJSON: path => api(path),
   avatarFor: selected => selected.avatar || avatars.get(selected.id) || defaultPortraits.get(selected.id) || fallbackAvatar,
   onCreate: () => agentEditor.open(),
@@ -1899,9 +1926,9 @@ async function refreshLocalView() {
 
 const guideSteps = [
   { title: '选择角色', target: 'agent-select', copy: '点角色头像，可以换一个人聊。每个角色的聊天和记忆分别保存。' },
-  { title: '创建角色', target: 'new-agent', copy: '填写名称和设定即可创建。新角色会出现在大家的角色图鉴里。', note: '只有创建时使用的浏览器能编辑或删除该角色。' },
+  { title: '创建角色', target: 'mode-developer', copy: '在 Developer 模式填写名称和设定即可创建角色。新角色会出现在大家的角色图鉴里。', note: '只有创建时使用的浏览器能编辑或删除该角色。' },
   { title: '找回聊天', target: 'session-select', copy: '用「会话」找回之前的聊天，或点「新会话」重新开始。' },
-  { title: '聊天记录与记忆', target: 'memory-toggle', copy: '点聊天窗口右上角的图标，可以查看详情或记忆。聊天和记忆保存在当前浏览器。', note: '换设备或浏览器不会同步，清理网站数据会丢失记录。回复时，服务端会临时处理这次聊天需要的内容。' },
+  { title: '聊天记录与记忆', target: 'mode-developer', copy: '在 Developer 模式可以查看聊天详情和记忆。聊天和记忆保存在当前浏览器。', note: '换设备或浏览器不会同步，清理网站数据会丢失记录。回复时，服务端会临时处理这次聊天需要的内容。' },
 ];
 let guideIndex = 0;
 function renderGuide() {

@@ -38,7 +38,7 @@ function image(src, className, alt, fallback) {
   return node;
 }
 
-function renderCard(article, agent, avatar, onEdit, onDelete) {
+function renderCard(article, agent, avatar, onEdit, onDelete, developer = true) {
   const card = agent.card || {};
   const name = agent.name;
   const portrait = card.portrait || avatar;
@@ -66,11 +66,17 @@ function renderCard(article, agent, avatar, onEdit, onDelete) {
     player.preload = 'metadata';
     player.src = card.voice.sample;
     player.setAttribute('aria-label', card.voice.label + '试听');
-    voice.append(player, element('p', 'gallery-voice-note', '参考音试听 · 实时语音尚未接入'));
+    voice.append(player);
+    if (developer) voice.append(element('p', 'gallery-voice-note', '参考音试听 · 实时语音尚未接入'));
     hero.append(voice);
   }
 
   const definition = element('section', 'gallery-definition');
+  if (!developer) {
+    definition.append(element('p', 'gallery-definition-copy', agent.description || card.role));
+    article.replaceChildren(hero, definition);
+    return;
+  }
   const heading = element('div', 'gallery-definition-heading');
   heading.append(element('h4', 'gallery-definition-title', '角色设定'));
   const actions = element('div', 'gallery-definition-actions');
@@ -147,7 +153,7 @@ function parseGalleryRoute(hash) {
   return { agentId, view: match[2] ? 'prompt' : 'overview' };
 }
 
-export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarFor, onSelect, onCreate, onEdit, onDelete, getDataVersion = () => '', requestJSON }) {
+export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarFor, onSelect, onCreate, onEdit, onDelete, getDataVersion = () => '', isDeveloperMode = () => true, requestJSON }) {
   const dialog = document.getElementById('agent-gallery');
   const closeButton = document.getElementById('agent-gallery-close');
   const createButton = document.getElementById('agent-gallery-create');
@@ -312,7 +318,10 @@ export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarF
     if (!agent) return;
     const changed = previewId !== id;
     previewId = id;
-    renderCard(article, agent, avatarFor(agent), agentId => { close(); void onEdit?.(agentId); }, agentId => { close(); void onDelete?.(agentId); });
+    renderCard(article, agent, avatarFor(agent),
+      agentId => { close(); void onEdit?.(agentId); },
+      agentId => { close(); void onDelete?.(agentId); }, isDeveloperMode());
+    overviewPanel.setAttribute('aria-labelledby', isDeveloperMode() ? 'agent-view-overview' : 'agent-gallery-title');
     observeDiagram();
     for (const button of roster.children) button.setAttribute('aria-pressed', String(button.dataset.agentId === previewId));
     const isSelected = id === getSelectedId();
@@ -322,7 +331,7 @@ export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarF
   }
 
   function navigate(id, nextView) {
-    const hash = `${galleryHash}/${encodeURIComponent(id)}${nextView === 'prompt' ? '/prompt' : ''}`;
+    const hash = `${galleryHash}/${encodeURIComponent(id)}${nextView === 'prompt' && isDeveloperMode() ? '/prompt' : ''}`;
     if (location.hash !== hash) history.pushState(history.state, '', hash);
     syncRoute();
   }
@@ -385,6 +394,10 @@ export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarF
   function syncRoute() {
     const route = parseGalleryRoute(location.hash);
     if (route) {
+      if (route.view === 'prompt' && !isDeveloperMode()) {
+        history.replaceState(history.state, '', location.hash.slice(0, -'/prompt'.length));
+        route.view = 'overview';
+      }
       followsHash = true;
       open(route);
     } else if (followsHash && dialog.open) {
@@ -398,7 +411,7 @@ export function installAgentGallery({ trigger, getAgents, getSelectedId, avatarF
   overviewTab.addEventListener('click', () => navigate(previewId, 'overview'));
   promptTab.addEventListener('click', () => navigate(previewId, 'prompt'));
   for (const tab of [overviewTab, promptTab]) tab.addEventListener('keydown', event => {
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    if (!isDeveloperMode() || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
     const next = event.key === 'Home' ? overviewTab : event.key === 'End' ? promptTab : tab === overviewTab ? promptTab : overviewTab;
     next.click();

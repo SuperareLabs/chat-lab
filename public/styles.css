@@ -561,7 +561,12 @@ body:has(.agent-editor[open]) { overflow: hidden; }
 .password-control button { height: 44px; padding: 0 13px; border: 0; background: transparent; color: var(--muted); font-size: 11px; white-space: nowrap; }
 .entrance-submit { margin-top: 6px; min-height: 46px; }
 .entrance-note { margin: 26px 0 0; color: #82887b; font-size: 11px; line-height: 1.8; }
-.workspace-meta { display: flex; justify-content: flex-end; min-height: 27px; padding: 0 5px 8px; }
+body[data-workspace-mode="demo"] [data-developer-only] { display: none; }
+.workspace-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; padding: 0 5px 8px; }
+.workspace-modes { display: flex; flex-wrap: wrap; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 10px; background: #ffffff80; }
+.workspace-mode { min-height: 32px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.workspace-mode:hover { color: var(--text); }
+.workspace-mode[aria-pressed="true"] { background: var(--accent-soft); color: var(--text); font-weight: 650; }
 .workspace-links { display: flex; align-items: center; gap: 11px; }
 .text-action { padding: 3px 0; border: 0; background: transparent; color: var(--muted); font-size: 11px; }
 .text-action:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
@@ -582,6 +587,16 @@ body:has(.agent-editor[open]) { overflow: hidden; }
 .danger-button:not(:disabled):hover { background: #744b40; }
 .recovery-content { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; padding: 12px; border: 1px solid var(--border); border-radius: 10px; font: 12px/1.8 var(--font); background: white; }
 body:not(.entrance-active) .stage { height: min(1040px, max(520px, calc(100dvh - 155px))); }
+@media (min-width: 1100px) {
+  body[data-workspace-mode="developer"] .workspace { width: min(100% - 40px, 1568px); }
+  body[data-workspace-mode="developer"] .stage {
+    display: grid;
+    grid-template-columns: minmax(240px, 1fr) minmax(0, 2.65fr) minmax(220px, .95fr);
+    gap: 14px;
+  }
+  body[data-workspace-mode="developer"] .inspector { position: static; z-index: auto; width: 100%; box-shadow: none; }
+  body[data-workspace-mode="developer"] :is(.inspector-close, .panel-shortcuts) { display: none; }
+}
 @media (max-width: 780px) { body:not(.entrance-active) .stage { height: auto; } }
 @media (max-width: 650px) {
   .entrance-card { padding: 28px; }

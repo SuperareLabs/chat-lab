@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="/motion-ui.css">
   <script type="module" src="/app.js"></script>
 </head>
-<body class="entrance-active">
+<body class="entrance-active" data-workspace-mode="demo">
   <main id="entrance" class="entrance" aria-labelledby="entrance-title" hidden>
     <section class="entrance-card">
       <img src="/assets/benny.png" class="entrance-avatar" alt="">
@@ -35,6 +35,10 @@
     <header class="workspace-header">
       <h1 class="visually-hidden">全Agent轻量聊天实验台</h1>
       <div class="workspace-meta">
+        <div class="workspace-modes" role="group" aria-label="使用模式">
+          <button id="mode-demo" class="workspace-mode" type="button" aria-pressed="true">Demo 体验模式</button>
+          <button id="mode-developer" class="workspace-mode" type="button" aria-pressed="false">Developer 模式</button>
+        </div>
         <div class="workspace-links">
           <button id="guide-open" class="text-action" type="button">帮助</button>
           <button id="logout" class="text-action" type="button">退出体验</button>
@@ -47,7 +51,7 @@
             <span id="agent-select-label">正在加载…</span>
             <svg class="agent-select-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
-          <button id="new-agent" class="toolbar-action" type="button" aria-haspopup="dialog" aria-controls="agent-editor">
+          <button id="new-agent" class="toolbar-action" data-developer-only type="button" aria-haspopup="dialog" aria-controls="agent-editor">
             <img src="/assets/icons/plus-lg.svg" alt=""><span>创建角色</span>
           </button>
         </div>
@@ -98,7 +102,7 @@
               <p id="agent-description"></p>
             </div>
           </div>
-          <div class="panel-shortcuts" aria-label="聊天选项">
+          <div class="panel-shortcuts" data-developer-only aria-label="聊天选项">
             <button id="context-toggle" class="icon-button" type="button" aria-controls="context-panel" aria-expanded="false" aria-label="聊天详情" title="聊天详情"><img src="/assets/icons/card-text.svg" alt=""></button>
             <button id="memory-toggle" class="icon-button" type="button" aria-controls="memory-panel" aria-expanded="false" aria-label="记忆" title="记忆"><img src="/assets/icons/archive.svg" alt=""></button>
           </div>
@@ -154,12 +158,12 @@
             <h2 id="agent-gallery-title">角色图鉴</h2>
           </div>
         </div>
-        <button id="agent-gallery-create" class="gallery-copy-button gallery-create-button" type="button">创建角色</button>
+        <button id="agent-gallery-create" data-developer-only class="gallery-copy-button gallery-create-button" type="button">创建角色</button>
         <button id="agent-gallery-close" class="gallery-close" type="button" aria-label="关闭角色图鉴" title="关闭角色图鉴">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         </button>
       </header>
-      <nav class="gallery-view-bar" aria-label="角色资料">
+      <nav class="gallery-view-bar" data-developer-only aria-label="角色资料">
         <div class="gallery-view-tabs" role="tablist" aria-label="查看内容">
           <button id="agent-view-overview" class="gallery-view-tab" type="button" role="tab" aria-controls="agent-overview-view" aria-selected="true">角色概览</button>
           <button id="agent-view-prompt" class="gallery-view-tab" type="button" role="tab" aria-controls="agent-prompt-view" aria-selected="false" tabindex="-1">提示词详情</button>
