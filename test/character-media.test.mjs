@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -266,3 +267,155 @@ for (const framing of ['subject', 'selfie']) {
     assert.deepEqual(await readFile(saved.file), image);
   });
 }
+
+test('the same conversation can reuse room and object photos for a selfie and a video', async t => {
+  if (spawnSync('ffmpeg', ['-version']).error?.code === 'ENOENT') return t.skip('FFmpeg combines photo references');
+  const directory = await mkdtemp(join(tmpdir(), 'chatlab-reference-continuity-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const tokenFile = join(directory, 'token');
+  await writeFile(tokenFile, 'test-token');
+  const room = '窗边有一张胡桃木桌，右边是一盏绿罩台灯';
+  const cup = '有缺口的蓝色茶杯在台灯左侧';
+  const image = await readFile(new URL('../public/assets/benny.png', import.meta.url));
+  const portrait = '/assets/lin-wanqing-avatar.png';
+  const portraitImage = await readFile(new URL('../public' + portrait, import.meta.url));
+  const photoRequests = [];
+  const pikaUploads = [];
+  const submitted = [];
+  let boardUploads = 0;
+  const qwen = 'https://8.137.116.27:5889';
+  const pika = 'https://api.dev.pika.art';
+  t.mock.method(globalThis, 'fetch', async (target, options) => {
+    const url = new URL(target);
+    switch (url.pathname) {
+      case '/api/services/gpu-qwen-image-21-app-production/connection':
+        return Response.json({ base_url: qwen, model: 'qwen-image-2.1', headers: {} });
+      case '/api/v2/assets/images': {
+        const file = options.body.get('file');
+        assert.equal(file.name, 'reference-board.png');
+        const png = Buffer.from(await file.arrayBuffer());
+        assert.equal(png.readUInt32BE(16), 640);
+        assert.equal(png.readUInt32BE(20), 384);
+        boardUploads++;
+        return Response.json({ asset_id: 'board' });
+      }
+      case '/api/v2/jobs':
+        photoRequests.push(JSON.parse(options.body));
+        return Response.json({ job_id: 'photo-job' });
+      case '/api/v2/jobs/photo-job': return Response.json({ status: 'succeeded' });
+      case '/api/v2/jobs/photo-job/outputs':
+        return Response.json({ items: [{ output_id: 'image', media_type: 'image/png', delivery_state: 'ready' }] });
+      case '/api/v2/jobs/photo-job/outputs/image/content': return new Response(image);
+      case '/api/services/pika-h3-flex/connection':
+        return Response.json({ base_url: pika, model: 'pika-h3-flex', headers: {} });
+      case '/v1/media/uploads': {
+        const index = pikaUploads.length;
+        pikaUploads.push(null);
+        return Response.json({ upload_url: 'https://upload.pika.art/signed-' + index, url: 'https://cdn.pika.art/ref-' + index });
+      }
+      case '/signed-0':
+      case '/signed-1':
+      case '/signed-2':
+        pikaUploads[Number(url.pathname.at(-1))] = options.body;
+        return new Response(null);
+      case '/v1/media/pika/pika-h3-flex/reference-to-video':
+        submitted.push(JSON.parse(options.body));
+        return Response.json({ id: 'video-job' });
+      case '/v1/media/jobs/video-job':
+        return Response.json({ status: 'failed' }); // The reference request has been captured.
+      default: throw new Error('Unexpected media endpoint');
+    }
+  });
+  const media = createCharacterMedia({ tokenFile, directory });
+  await media.refresh();
+  const provider = { async chat({ messages, tools }) {
+    if (messages.at(-1).role === 'tool') return { content: '{"messages":["给你看看。"]}' };
+    const choices = JSON.parse(messages[1].content.split('\n').at(-1)).photoReferences;
+    const request = messages.at(-1).content;
+    let kind = 'photo';
+    let args;
+    if (request === '给我一张房间的照片') {
+      assert.equal(choices, undefined);
+      args = { framing: 'subject', scene: room };
+    } else if (request === '同一个地方自拍一下，给我看看蓝色茶杯') {
+      assert.match(messages[0].content, /同一场景、物品、布局或外观/);
+      assert.deepEqual(choices, [{ id: 'photo-1', scene: room, framing: 'subject' }]);
+      args = { framing: 'selfie', scene: cup, references: [{ id: 'photo-1', keep: room }] };
+    } else if (request === '在这儿录一小段视频，还是那只杯子') {
+      assert.deepEqual(choices, [{ id: 'photo-1', scene: cup, framing: 'selfie', keptDetails: [room] },
+        { id: 'photo-2', scene: room, framing: 'subject' }]);
+      kind = 'video';
+      args = { framing: 'selfie', scene: '在原地端起杯子', motion, duration,
+        references: [{ id: 'photo-2', keep: room }, { id: 'photo-1', keep: cup }] };
+    } else if (request === '现在在街角了，拍一张街景') {
+      assert.equal(choices.length, 2);
+      args = { framing: 'subject', scene: '街角的新场景' };
+    } else {
+      assert.equal(choices, undefined);
+      args = { framing: 'subject', scene: '另一段会话', references: [{ id: 'photo-1', keep: room }] };
+    }
+    const name = 'send_character_' + kind;
+    assert(tools.find(({ function: tool }) => tool.name === name).function.parameters.properties.references);
+    return { content: '', toolCalls: [{ id: 'capture', type: 'function', function: { name, arguments: JSON.stringify(args) } }] };
+  } };
+  const workspace = createBrowserWorkspace({ provider, characterMedia: media,
+    defaultAgents: [{ ...role, metadata: { card: { portrait } } }], defaultChildren: [{ name: '访客', age: 22 }],
+    model: { name: 'mock', configured: true }, memoryModel: { configured: false } });
+  const boot = await workspace.execute({ method: 'GET', path: '/api/state' });
+  const scope = { childId: boot.value.children[0].id, agentId: role.id };
+  let snapshot = boot.snapshot;
+  let sessionId;
+  async function turn(text, requestId) {
+    const events = [];
+    const response = await workspace.execute({ method: 'POST', path: '/api/chat', snapshot, scope,
+      body: { ...scope, ...(sessionId ? { sessionId } : {}), text, requestId } }, { emit: event => events.push(event) });
+    sessionId = events.find(event => event.type === 'start')?.sessionId;
+    assert(sessionId);
+    snapshot = response.snapshot;
+    return events;
+  }
+
+  const first = await turn('给我一张房间的照片', 'room-photo');
+  const roomAttachment = first.find(event => event.type === 'character_media').attachment;
+  const second = await turn('同一个地方自拍一下，给我看看蓝色茶杯', 'room-selfie');
+  assert(second.some(event => event.type === 'character_media'));
+  assert.equal(boardUploads, 1);
+  assert.deepEqual(photoRequests.map(request => request.parameters.mode), ['t2i', 'i2i']);
+  assert.deepEqual(photoRequests[1].inputs, [{ role: 'reference_image', asset_id: 'board' }]);
+  assert(photoRequests[1].parameters.prompt.includes('panel 1 of <image1>'));
+  assert(photoRequests[1].parameters.prompt.includes('Panel 2: preserve these details from the reference: ' + room));
+
+  const third = await turn('在这儿录一小段视频，还是那只杯子', 'room-video');
+  assert.deepEqual(pikaUploads, [portraitImage, image, image]);
+  assert.deepEqual(submitted[0].references, [0, 1, 2].map(index => ({ type: 'image', url: 'https://cdn.pika.art/ref-' + index })));
+  assert(submitted[0].prompt.includes('Reference image 2: preserve these details from the reference: ' + room));
+  assert(submitted[0].prompt.includes('Reference image 3: preserve these details from the reference: ' + cup));
+  assert.equal(third.findLast(event => event.type === 'tool_usage').call.mediaBilling.unitMicroUsd, 30_000);
+
+  pikaUploads.length = 0;
+  const subjectUsage = [];
+  await media.generate('video', { agent: role, framing: 'subject', scene: room, motion, duration, sessionId,
+    references: [{ assetId: roomAttachment.id, keep: room }], runId: 'room-only-video',
+    signal: new AbortController().signal, onUsage: entry => subjectUsage.push(entry) });
+  assert.deepEqual(pikaUploads, [image]);
+  assert.deepEqual(submitted[1].references, [{ type: 'image', url: 'https://cdn.pika.art/ref-0' }]);
+  assert(submitted[1].prompt.includes('Reference image 1: preserve these details from the reference: ' + room));
+  assert.equal(subjectUsage.at(-1).mediaBilling.unitMicroUsd, 30_000);
+
+  await turn('现在在街角了，拍一张街景', 'new-scene');
+  assert.equal(photoRequests[2].parameters.mode, 't2i');
+  assert.deepEqual(await media.photoReferences([{ role: 'assistant', attachment: roomAttachment }], 'unrelated-session'), []);
+  const another = await workspace.execute({ method: 'POST', path: '/api/sessions', snapshot, scope, body: scope });
+  snapshot = another.snapshot;
+  sessionId = another.value.session.id;
+  const foreign = await turn('引用另一段会话的照片', 'foreign-reference');
+  assert.equal(photoRequests.length, 3);
+  assert(foreign.some(event => event.type === 'done'));
+  assert(!foreign.some(event => event.type === 'character_media'));
+
+  const old = { id: 'b'.repeat(48), kind: 'photo' };
+  await writeFile(join(directory, old.id + '.photo'), image);
+  assert.deepEqual(await media.photoReferences([{ role: 'user', text: '拍杯子' },
+    { role: 'assistant', text: '给你看看。', attachment: old }], sessionId),
+  [{ id: 'photo-1', assetId: old.id, reply: '给你看看。', request: '拍杯子' }]);
+});
