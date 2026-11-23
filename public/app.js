@@ -312,7 +312,7 @@ function updateControls() {
 }
 
 
-function chatMessage(role, text, animate = false, replyParts) {
+function chatMessage(role, text, animate = false, replyParts, attachment) {
   const assistant = role === 'assistant';
   const row = node('div', `message-row ${assistant ? 'is-assistant' : 'is-user'}`);
   if (assistant && imageForAgent()) {
@@ -325,12 +325,34 @@ function chatMessage(role, text, animate = false, replyParts) {
   const stack = node('div', 'message-stack');
   const bubbles = assistant ? replyMessages(text, replyParts) : text === undefined ? [] : [text];
   for (const part of bubbles) stack.append(messageBubble(part, animate));
+  if (assistant) appendCharacterMedia(stack, attachment);
   row.append(stack);
   return { row, stack };
 }
 
 function messageBubble(text, animate = false) {
   return node('div', animate ? 'message-bubble is-arriving' : 'message-bubble', text);
+}
+
+function appendCharacterMedia(stack, attachment) {
+  if (!attachment || !['photo', 'video'].includes(attachment.kind) ||
+      typeof attachment.id !== 'string' || !/^[a-f0-9]{48}$/.test(attachment.id) ||
+      stack.querySelector('.message-character-media')) return;
+  const video = attachment.kind === 'video';
+  const frame = node('figure', 'message-character-media');
+  const element = node(video ? 'video' : 'img');
+  element.src = `/api/character-media/${attachment.kind}/${attachment.id}`;
+  if (video) {
+    element.controls = true;
+    element.playsInline = true;
+    element.preload = 'metadata';
+    element.setAttribute('aria-label', '生成的角色短视频');
+  } else {
+    element.alt = '生成的角色生活照';
+    element.loading = 'lazy';
+  }
+  frame.append(element, node('figcaption', '', video ? '生成短视频' : '生成照片'));
+  stack.append(frame);
 }
 
 function appendTyping(stack) {
@@ -367,7 +389,7 @@ function renderChat(messages = [], loading = false, { preserveScroll = false } =
   const scrollTop = ui.messages.scrollTop;
   const followLatest = ui.messages.scrollHeight - scrollTop - ui.messages.clientHeight < 150;
   const empty = ui['chat-empty'];
-  const rows = messages.map(message => chatMessage(message.role, message.text ?? message.content ?? '', false, message.parts).row);
+  const rows = messages.map(message => chatMessage(message.role, message.text ?? message.content ?? '', false, message.parts, message.attachment).row);
   if (empty) {
     empty.hidden = Boolean(rows.length);
     put('chat-empty-title', loading ? '正在加载会话…' : !state.agents.length ? '创建第一个角色' : (state.childId ? `和${agent()?.name || 'Agent'}聊聊` : '选择用户，开始试聊'));
@@ -1283,6 +1305,13 @@ async function requestReply() {
       if (event.type === 'tool_status') {
         if (event.status === 'running') put('chat-status', event.label || `${agent()?.name || 'Agent'}正在处理…`);
         else if (event.status === 'complete') put('chat-status', `${agent()?.name || 'Agent'}正在回复…`);
+      }
+      if (event.type === 'character_media') {
+        presentation = presentation.then(() => {
+          removeTyping(reply.stack);
+          appendCharacterMedia(reply.stack, event.attachment);
+          scrollLatest(true);
+        }).catch(error => { presentationError ??= error; });
       }
       if (event.type === 'done') { done = true; streamEnded = true; }
       if (event.type === 'error') throw new Error(event.message || '本轮回复失败');

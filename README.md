@@ -88,6 +88,8 @@ npm start
 
 ## 文档与测试
 
+- [角色照片、短视频和本地配置](docs/character-media.md)
+
 - [1.3.0 封版说明](docs/releases/v1.3.0.md)
 - [历史1.2.0封版说明](docs/releases/v1.2.0.md)
 - [公开体验架构与部署准备](docs/browser-local-demo.md)
