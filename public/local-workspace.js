@@ -204,14 +204,15 @@ export class LocalWorkspace {
     }
     return value;
   }
-  async createPublicAgent({ name, definition }) {
+  async createPublicAgent({ name, definition, videoVoiceId }) {
     const ownerKey = await this.catalogOwnerKey(true);
+    const matches = item => item.name === name && item.definition === definition && (item.videoVoiceId || '') === (videoVoiceId || '');
     const meta = await this.store.updateMeta(meta => {
       const pending = [...(meta.catalogPendingCreates || [])];
-      if (!pending.some(item => item.name === name && item.definition === definition)) pending.push({ name, definition, requestId: identifier() });
+      if (!pending.some(matches)) pending.push({ name, definition, ...(videoVoiceId ? { videoVoiceId } : {}), requestId: identifier() });
       return { ...meta, catalogPendingCreates: pending };
     });
-    const request = meta.catalogPendingCreates.find(item => item.name === name && item.definition === definition);
+    const request = meta.catalogPendingCreates.find(matches);
     if (!request?.requestId) throw new Error('创建请求未能保存，已停止公开创建。');
     const result = await this.catalogRequest('/api/catalog/agents', { method: 'POST', body: request, ownerKey });
     if (!result.agent?.id) throw new Error('公共角色已提交，但返回结果不完整；请保留设定后重试。');

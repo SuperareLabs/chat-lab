@@ -1,21 +1,29 @@
 # 角色照片与短视频
 
-角色可在聊天中分享自己的生活场景。聊天模型只填写可见场景和动作，服务端固定参考图、构图、风格与时长。每轮最多生成一份影像，普通聊天照常返回文字。聊天里会显示生成标记。
+角色可在聊天中分享自己的生活场景。Agent 先选媒介，再决定谁入镜。每轮最多生成一份影像，普通聊天照常返回文字。
+
+- **媒介**：按对方明确指定的照片或视频处理。未指定时，静态画面能交代清楚就选照片，只有动作、过程或声音影响理解时才选视频。
+- **入镜**：如果对方想看角色本人、她的表情或她亲自展示的动作，选择角色入镜。当对方想看的只是一个地方、物件或结果，使用后摄视角对准拍摄主体。两种构图都可搭配照片或短视频。
+- **声音**：短视频可单独指定角色的原话与环境音。角色的声音可以来自镜头内，也可以是画外介绍。
 
 ## 千问生活照
 
-取当前角色设定图作为身份参考，保留脸部、发型、年龄和辨识特征，将参考里的插画材质转成真实摄影。输出固定为 768×1024 的竖幅前置手机随拍，手持微倾、轻微偏心，画面保留上半身、正在做的事和周围环境。用场景真实光源、自然明暗过渡和暗部细噪点，保留实际肤质和物件纹理。每次只替换地点、可见物和人物当下姿势。关闭自动扩写，保持模板可控。
-
-同一个模板也生成视频首帧，尺寸改为 576×1024，与 9:16 视频对齐。使用本地部署的 `qwen-image-2.1` 参考图模式。
+照片使用本地部署的 `qwen-image-2.1`，固定为 768×1024 手机随拍。角色入镜时给设定图作身份参考，保留辨识特征和拍摄现场。只拍主体时直接文生图，用自然的后摄构图。两条路径都使用真实环境光、暗部细噪点和轻微手持感，关闭自动扩写。
 
 [Qwen Image 2.1 参考图改写指南](https://github.com/QwenLM/Qwen-Image-2.1/blob/main/prompt_rewrite/prompts/system_prompt_edit.txt) · [阿里云图像编辑指南](https://www.alibabacloud.com/help/en/model-studio/qwen-image-edit-guide)
 
 ## H3 Flex 生活短视频
 
-先把千问生成的前置自拍首帧上传到 Pika，通过 H3 Flex 图生视频接口将它传入 `image` 字段。固定 9:16 和 480p，角色像拿着手机给对方发视频，首帧保留上半身和场景。视频是连续单镜头，允许轻微的手腕晃动、自然倾斜、光影和曝光变化，暗部保留细微的手机传感器噪点。角色在半秒内进入动作，Agent 根据动作选 3、4 或 5 秒，保留最短合适节奏。关闭提示词改写，FFmpeg 按所选时长裁切，以处理原生输出向帧网格取整。
+视频固定 9:16 和 480p，保留自然手持晃动、光影和曝光变化。角色入镜时，直接把设定图作为 H3 Flex `reference-to-video` 的图片参考，只拍主体时直接走 `text-to-video`，使用后摄单镜头。
 
-[H3 Flex 图生视频合同](https://dev.pika.art/models/pika/pika-h3-flex/image-to-video)
+工具分别填写场景、动作、可选原话和环境音。角色可以在镜头前说一句，背景是现场底噪和物件声。苏清月走 Pika 原生配音，时长按每秒 4.7 字估算，标点和空格不计，和动作所需时长取较长者向上取整，范围 3–5 秒。鳄鱼爸爸有台词时，由 Service Clan 的火山 ICL 2.0 用绑定音色先合成，再量出实际音频时长，与动作所需时长取较长者。将音频和设定图一起交给 Pika 作参考，超过 5 秒的台词在提交 Pika 前提示缩短。H3 Flex 用音频参考引导口型、节奏和音色，最终音轨由 Pika 生成。FFmpeg 只转码和裁切输出，保留生成的对白和环境声。
+
+创建或编辑角色时，可以填入已经注册的 ICL 2.0 音色 ID。留空时使用 Pika 原生配音，绑定音色后有台词才合成语音。角色入镜需要设定图。只拍主体时，如果有固定音色的画外介绍，保留 Pika 环境音并在本地混入合成的台词。鳄鱼爸爸预设为 `S_eH42pcGL1`。
+
+Pika 480p 参考图生视频按 USD 0.03／输出秒估算，主体文生视频按 USD 0.01／输出秒估算。工具和会话费用明细按美元单列估价及回执中的实付。账单暂未结算时保留任务 ID 和估价。这个价格覆盖 Pika，固定音色 TTS 另按供应商账单计。
+
+[H3 Flex 参考视频接口](https://dev.pika.art/models/pika/pika-h3-flex/reference-to-video) · [Pika 价格](https://dev.pika.art/models/pika/pika-h3-flex/reference-to-video/pricing) · [火山 ICL 2.0 接口](https://docs.volcengine.com/docs/doubao-voice/http-chunked-sse-unidirectional-streaming-v3?lang=zh)
 
 ## 本地启动
 
-在免登录、仅监听 `127.0.0.1` 的浏览器工作区，设置 `CHAT_SERVICE_CLAN_TOKEN_FILE` 为本机 Service Clan 的 `.local/access-token` 绝对路径，设置 `CHAT_CHARACTER_MEDIA_DIR` 为专用本地媒体目录。照片需要 Service Clan 中的 `gpu-qwen-image-21`。视频另需 `pika-h3-flex` 和 PATH 中的 FFmpeg。设定图来自应用内已登记的角色素材；SVG 需要同名 PNG 参考图。影像文件保存在媒体目录，浏览器聊天快照只保存引用。若 Node 启用了环境代理，确保 `localhost,127.0.0.1` 绕过代理。
+在免登录、仅监听 `127.0.0.1` 的浏览器工作区，设置 `CHAT_SERVICE_CLAN_TOKEN_FILE` 为本机 Service Clan 的 `.local/access-token` 绝对路径，设置 `CHAT_CHARACTER_MEDIA_DIR` 为专用本地媒体目录。照片需要 Service Clan 中的 `gpu-qwen-image-21`。视频需要 `pika-h3-flex` 和 PATH 中的 FFmpeg。固定音色的有声视频另需 `volc-icl20-sse`。设定图来自应用内已登记的角色素材，SVG 需要同名 PNG 参考图。影像文件保存在媒体目录，浏览器聊天快照只保存引用。若 Node 启用了环境代理，确保 `localhost,127.0.0.1` 绕过代理。

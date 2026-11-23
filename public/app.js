@@ -85,11 +85,12 @@ function installAgentEditor({ canOpen, onSaved, onBusyChanged = () => {},
   readAgent = id => api(`/api/agents/${encodeURIComponent(id)}`),
   writeAgent = (id, body) => api(id ? `/api/agents/${encodeURIComponent(id)}` : '/api/agents', body, id ? 'PATCH' : 'POST'),
   getNote = () => '' }) {
-  const fields = Object.fromEntries(['title', 'form', 'name', 'definition', 'note', 'error', 'reload', 'cancel', 'save']
+  const fields = Object.fromEntries(['title', 'form', 'name', 'definition', 'voice-id', 'note', 'error', 'reload', 'cancel', 'save']
     .map(key => [key, el(`agent-editor-${key}`)]));
   const dialog = el('agent-editor');
   let editingId = '';
   let revision;
+  let savedVoiceId = '';
   let loading = false;
   let saving = false;
   let conflicted = false;
@@ -102,7 +103,7 @@ function installAgentEditor({ canOpen, onSaved, onBusyChanged = () => {},
   }
 
   function renderControls() {
-    fields.name.disabled = fields.definition.disabled = loading || saving || Boolean(pendingSaved);
+    fields.name.disabled = fields.definition.disabled = fields['voice-id'].disabled = loading || saving || Boolean(pendingSaved);
     fields.save.disabled = loading || saving || conflicted || Boolean(editingId && revision == null);
     fields.cancel.disabled = saving;
     fields.reload.disabled = loading || saving;
@@ -124,6 +125,7 @@ function installAgentEditor({ canOpen, onSaved, onBusyChanged = () => {},
       }
       fields.name.value = agent.name;
       fields.definition.value = agent.definition;
+      fields['voice-id'].value = savedVoiceId = agent.videoVoiceId || '';
       revision = agent.revision;
       conflicted = false;
       fields.reload.hidden = true;
@@ -145,6 +147,7 @@ function installAgentEditor({ canOpen, onSaved, onBusyChanged = () => {},
     fields.form.reset();
     editingId = id;
     revision = undefined;
+    savedVoiceId = '';
     loading = false;
     conflicted = false;
     pendingSaved = null;
@@ -163,6 +166,7 @@ function installAgentEditor({ canOpen, onSaved, onBusyChanged = () => {},
     if (loading || saving || conflicted || !dialog.open) return;
     const name = fields.name.value.trim();
     const definition = fields.definition.value;
+    const videoVoiceId = fields['voice-id'].value.trim();
     if (!pendingSaved && (!name || !definition.trim())) {
       errorMessage('请填写名称和角色设定。');
       (!name ? fields.name : fields.definition).focus();
@@ -179,7 +183,8 @@ function installAgentEditor({ canOpen, onSaved, onBusyChanged = () => {},
     renderControls();
     try {
       if (!pendingSaved) {
-        const result = await writeAgent(editingId, { name, definition, ...(editingId ? { revision } : {}) });
+        const result = await writeAgent(editingId, { name, definition, ...(videoVoiceId !== savedVoiceId ? { videoVoiceId } : {}),
+          ...(editingId ? { revision } : {}) });
         if (!result.agent?.id) throw new Error('保存结果不完整，请重新载入角色列表。');
         pendingSaved = { agent: result.agent, created: !editingId };
       }
@@ -485,6 +490,20 @@ function usageComponentCost(usage, kind) {
   return uncertain ? amount > 0 ? '≥' + money(amount) : '待估' : money(amount);
 }
 
+function usd(microUsd) {
+  return 'US$' + (microUsd / 1_000_000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+}
+
+function videoBillingRows(bills) {
+  if (!bills.length) return [];
+  const settled = bills.filter(bill => Number.isSafeInteger(bill.actualMicroUsd));
+  const pending = bills.filter(bill => !Number.isSafeInteger(bill.actualMicroUsd));
+  return [
+    ...(settled.length ? [['Pika 视频实付', usd(settled.reduce((sum, bill) => sum + bill.actualMicroUsd, 0))]] : []),
+    ...(pending.length ? [['Pika 视频未结算估价', usd(pending.reduce((sum, bill) => sum + bill.estimatedMicroUsd, 0))]] : []),
+  ];
+}
+
 function usageMetricDetails(usage) {
   const observed = usage?.recordedCalls > 0;
   const partial = Boolean(usage && (usage.partial || usage.untrackedTurns > 0 || usage.untrackedMemoryJobs > 0 || usageUncertain(usage)));
@@ -522,8 +541,8 @@ function usageMetricDetails(usage) {
         ['搜索模型', observed ? usageComponentCost(usage, 'search') : '—'], ['记忆模型', observed ? usageComponentCost(usage, 'memory') : '—'],
         ...(usage?.calls?.some(call => call.kind === 'context_brief')
           ? [['历史概括整理', usageComponentCost(usage, 'context_brief')]] : []),
-        ['联网等插件', pluginFee]],
-      note: [coverage, '模型与插件费用均已计入合计。按实际用量及适用刊例价预估，未扣免费额度、优惠或折扣，最终以方舟账单为准。',
+        ['联网等插件', pluginFee], ...videoBillingRows((usage?.calls || []).map(call => call.mediaBilling).filter(Boolean))],
+      note: [coverage, '人民币合计为方舟模型与插件费用预估。Pika 视频费用以美元单列，实付来自 Pika 任务回执。',
         snapshots.length ? '价格快照 ' + snapshots.join('、') + '。' : '', ...rates, ...priceNotes].filter(Boolean).join('\n') },
   ];
 }
@@ -674,8 +693,17 @@ function toolUsageSummary(calls) {
   const missing = values.length !== calls.length || values.some(usageUncertain);
   const costs = values.map(knownCost).filter(Number.isFinite);
   const amount = costs.reduce((total, value) => total + value, 0);
-  text.append(node('span', 'tool-usage-model', model), node('span', 'tool-usage-fee', pending ? '统计中' : missing ? amount > 0 ? '≥' + money(amount) : '待估' : money(amount)));
-  text.title = models.length ? models.join('\n') + '\n工具费用为预估，已计入下方会话合计。' : '本地工具不产生额外外部调用费；相关聊天模型用量计入下方会话统计。';
+  const videoBills = values.map(value => value.mediaBilling).filter(Boolean);
+  const allVideo = videoBills.length === values.length && videoBills.length > 0;
+  let fee = pending ? '统计中' : missing ? amount > 0 ? '≥' + money(amount) : '待估' : money(amount);
+  if (allVideo) {
+    const actual = videoBills.every(bill => Number.isSafeInteger(bill.actualMicroUsd));
+    fee = (actual ? '' : '预估 ') + usd(videoBills.reduce((sum, bill) =>
+      sum + (actual ? bill.actualMicroUsd : bill.estimatedMicroUsd), 0));
+  }
+  text.append(node('span', 'tool-usage-model', model), node('span', 'tool-usage-fee', fee));
+  text.title = allVideo ? 'Pika 费用按美元单列，以任务回执为准。'
+    : models.length ? models.join('\n') + '\n详见会话费用明细。' : '本地工具不产生额外外部调用费；相关聊天模型用量计入下方会话统计。';
   return text;
 }
 
@@ -687,13 +715,22 @@ function toolCallSection(calls, open = false) {
     header.append(node('code', 'tool-call-name', call.name || '工具'));
     const usage = call.usage;
     if (usage) {
-      const meta = node('span', 'tool-call-meta', briefModel(usage.model) + ' · ' + costLabel(usage));
-      meta.title = [usage.model || '本地执行，无额外外部调用费；聊天模型费用计入会话统计',
-        usage.basis, usage.asOf ? '价格快照 ' + usage.asOf : '', ...(usage.sources || [])].filter(Boolean).join('\n');
+      const bill = usage.mediaBilling;
+      const billed = bill && Number.isSafeInteger(bill.actualMicroUsd);
+      const fee = bill ? (billed ? '实付 ' + usd(bill.actualMicroUsd) : '预估 ' + usd(bill.estimatedMicroUsd)) : costLabel(usage);
+      const meta = node('span', 'tool-call-meta', briefModel(usage.model) + ' · ' + fee);
+      meta.title = bill ? [usage.model, '价格核对 ' + bill.checkedAt, bill.source].filter(Boolean).join('\n')
+        : [usage.model || '本地执行，无额外外部调用费；聊天模型费用计入会话统计',
+          usage.basis, usage.asOf ? '价格快照 ' + usage.asOf : '', ...(usage.sources || [])].filter(Boolean).join('\n');
       header.append(meta);
     } else header.append(node('span', 'tool-call-meta', '用量未记录'));
     item.append(header);
-    if (usage?.model) {
+    if (usage?.mediaBilling) {
+      const bill = usage.mediaBilling;
+      const label = `${bill.resolution} · ${bill.duration} 秒 · ${usd(bill.unitMicroUsd)}/秒`;
+      item.append(node('p', 'tool-call-breakdown', label +
+        (Number.isSafeInteger(bill.actualMicroUsd) ? ' · 估价 ' + usd(bill.estimatedMicroUsd) : ' · 未收到结算回执')));
+    } else if (usage?.model) {
       item.append(node('p', 'tool-call-model', usage.model));
       item.append(node('p', 'tool-call-breakdown', usage.pending ? '等待返回实际用量…'
         : `输入 ${tokenCount(usage.inputTokens)} · 输出 ${tokenCount(usage.outputTokens)} · 模型 ${money(usage.modelCostCny)} · 插件 ${money(usage.toolCostCny)}`));
@@ -1835,7 +1872,7 @@ async function refreshLocalView() {
 
 const guideSteps = [
   { title: '先选一个想聊的角色', target: 'agent-select', copy: '点左上角的 Agent 打开角色图鉴。八位角色都能选择；在「角色概览」了解设定，在「提示词原文」查看实际使用的提示词。', note: '可以随时换角色，每位角色分别保存与你的记忆。' },
-  { title: '也可以创造自己的角色', target: 'new-agent', copy: '点击「创建角色」，只需填写名称和角色设定。创建后会直接公开，大家都能在角色图鉴里选择并聊天。', note: '自己创建的公共角色可以编辑、删除。管理凭证保存在创建时的浏览器，保留网站数据才能继续管理；旧的本机角色不会自动公开。' },
+  { title: '也可以创造自己的角色', target: 'new-agent', copy: '点击「创建角色」，填写名称和角色设定，也可以绑定已经注册的音色 ID。创建后会直接公开，大家都能在角色图鉴里选择并聊天。', note: '自己创建的公共角色可以编辑、删除。管理凭证保存在创建时的浏览器，保留网站数据才能继续管理；旧的本机角色不会自动公开。' },
   { title: '让角色认识你', target: 'new-child', copy: '右上角可以创建用户资料，填写名字、年龄与兴趣。接着就能聊天；点「新会话」开启下一段，旧会话记录仍可查看。', note: '默认提供22岁的访客测试资料。停聊约15分钟后，会在下次打开或页面仍开着时整理记忆。每个人的对话与记忆各自保存在浏览器里。' },
   { title: '记忆留在你的浏览器', target: 'memory-panel', copy: '右侧可以查看记忆和用户概括。「清空记忆」只清理当前用户与角色的记忆，聊天记录会保留。左侧显示每轮实际送给模型的内容。', note: '共享口令不是账户。换设备、换浏览器不会同步；清理网站数据会丢失记录。请求处理时会临时发送工作区资料给服务端，不写入服务器用户数据库。请自行保留重要信息。' },
 ];

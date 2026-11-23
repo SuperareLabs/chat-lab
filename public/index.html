@@ -216,6 +216,9 @@
       <input id="agent-editor-name" name="name" required autocomplete="off" placeholder="给角色起个名字">
       <label for="agent-editor-definition">角色设定</label>
       <textarea id="agent-editor-definition" name="definition" required rows="14" placeholder="写下这个角色的完整设定，可以分段。"></textarea>
+      <label for="agent-editor-voice-id">ICL 2.0 音色 ID（可选）</label>
+      <input id="agent-editor-voice-id" name="videoVoiceId" maxlength="64" autocomplete="off" spellcheck="false"
+        placeholder="已注册的音色 ID，留空使用 Pika 配音">
       <p id="agent-editor-error" class="field-error" role="alert" hidden></p>
       <button id="agent-editor-reload" class="secondary-button agent-editor-reload" type="button" hidden>重新载入已保存版本</button>
       <div class="dialog-actions">

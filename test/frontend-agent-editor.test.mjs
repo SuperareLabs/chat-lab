@@ -71,7 +71,7 @@ function dom() {
   const document = { getElementById: id => nodes.get(id), createElement: tag => new Element(tag),
     createElementNS: (_, tag) => new Element(tag) };
   nodes.get('agent-editor-form').reset = () => {
-    for (const key of ['agent-editor-name', 'agent-editor-definition']) nodes.get(key).value = '';
+    for (const key of ['agent-editor-name', 'agent-editor-definition', 'agent-editor-voice-id']) nodes.get(key).value = '';
   };
   return { document, nodes };
 }
@@ -91,7 +91,7 @@ function editorHarness({ respond, onSaved = async () => {}, canOpen = () => true
   return { nodes, requests, busy, editor: install({ canOpen, onSaved, onBusyChanged: value => busy.push(value) }) };
 }
 
-test('the two-field creator works without a selected user and blocks duplicate submissions', async () => {
+test('the creator can bind a voice and blocks duplicate submissions without a selected user', async () => {
   let finish;
   const saved = [];
   const harness = editorHarness({
@@ -103,15 +103,16 @@ test('the two-field creator works without a selected user and blocks duplicate s
   assert.equal(nodes.get('agent-editor').open, true);
   assert.equal(nodes.get('agent-editor-title').textContent, '创建角色');
   const dialogHtml = html.match(/<dialog id="agent-editor"[\s\S]+?<\/dialog>/)[0];
-  assert.deepEqual([...dialogHtml.matchAll(/<(input|textarea)\b[^>]*\bname="([^"]+)"/g)].map(match => match[2]), ['name', 'definition']);
+  assert.deepEqual([...dialogHtml.matchAll(/<(input|textarea)\b[^>]*\bname="([^"]+)"/g)].map(match => match[2]), ['name', 'definition', 'videoVoiceId']);
   nodes.get('agent-editor-name').value = '  灯灯  ';
   nodes.get('agent-editor-definition').value = '\n第一段。\n\n  第二段保留缩进。\n';
+  nodes.get('agent-editor-voice-id').value = ' S_testVoice ';
   const pending = nodes.get('agent-editor-form').fire('submit');
   await nodes.get('agent-editor-form').fire('submit');
   assert.equal(requests.length, 1);
   assert.equal(requests[0].method, 'POST');
   assert.equal(requests[0].path, '/api/agents');
-  assert.deepEqual(requests[0].payload, { name: '灯灯', definition: '\n第一段。\n\n  第二段保留缩进。\n' });
+  assert.deepEqual(requests[0].payload, { name: '灯灯', definition: '\n第一段。\n\n  第二段保留缩进。\n', videoVoiceId: 'S_testVoice' });
   assert.equal(nodes.get('agent-editor-save').disabled, true);
   assert.equal(nodes.get('agent-editor-cancel').disabled, true);
   assert.equal((await nodes.get('agent-editor').fire('cancel')).defaultPrevented, true);
