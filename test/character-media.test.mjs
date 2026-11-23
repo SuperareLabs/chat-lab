@@ -10,6 +10,7 @@ const role = { id: 'test-role', name: '角色', definition: '自然聊天。', m
 const attachment = { id: 'a'.repeat(48), kind: 'video' };
 const motion = '她拿起刚泡好的咖啡，抿一口。';
 const scene = '她坐在厨房窗边，手放在咖啡杯旁。';
+const duration = 4;
 
 test('character video is delivered and replayed without another media generation', async () => {
   const requested = [];
@@ -19,7 +20,7 @@ test('character video is delivered and replayed without another media generation
       rounds++;
       assert(tools.some(tool => tool.function.name === 'send_character_video'));
       if (rounds === 1) return { content: '', toolCalls: [
-        { id: 'video', type: 'function', function: { name: 'send_character_video', arguments: JSON.stringify({ scene, motion }) } },
+        { id: 'video', type: 'function', function: { name: 'send_character_video', arguments: JSON.stringify({ scene, motion, duration }) } },
         { id: 'photo', type: 'function', function: { name: 'send_character_photo', arguments: JSON.stringify({ scene }) } },
       ] };
       const results = messages.filter(message => message.role === 'tool').map(message => JSON.parse(message.content));
@@ -31,7 +32,7 @@ test('character video is delivered and replayed without another media generation
   const workspace = createBrowserWorkspace({ provider, defaultAgents: [role], defaultChildren: [{ name: '访客', age: 22 }],
     model: { name: 'mock', configured: true }, memoryModel: { configured: false },
     characterMedia: { available: () => true, async generate(kind, args) {
-      requested.push({ kind, agent: args.agent.id, scene: args.scene, motion: args.motion });
+      requested.push({ kind, agent: args.agent.id, scene: args.scene, motion: args.motion, duration: args.duration });
       return { ok: true, attachment };
     } } });
   const boot = await workspace.execute({ method: 'GET', path: '/api/state' });
@@ -40,7 +41,7 @@ test('character video is delivered and replayed without another media generation
   const events = [];
   const result = await workspace.execute({ method: 'POST', path: '/api/chat', snapshot: boot.snapshot, scope, body },
     { emit: event => events.push(event) });
-  assert.deepEqual(requested, [{ kind: 'video', agent: role.id, scene, motion }]);
+  assert.deepEqual(requested, [{ kind: 'video', agent: role.id, scene, motion, duration }]);
   assert.deepEqual(events.find(event => event.type === 'character_media')?.attachment, attachment);
   assert.deepEqual(JSON.parse(result.snapshot.tables.messages.find(row => row.role === 'assistant').attachment), attachment);
   const replay = [];
@@ -84,13 +85,15 @@ test('Pika upload sends the provider-signed headers with the unchanged Qwen fram
         return new Response(null, { status: 200 });
       case '/v1/media/pika/pika-h3-flex/image-to-video':
         assert.equal(JSON.parse(options.body).image, 'https://cdn.pika.art/frame.png');
+        assert.equal(JSON.parse(options.body).duration, duration);
+        assert.match(JSON.parse(options.body).prompt, /irregular wrist sway/);
         return new Response(null, { status: 422 });
       default: throw new Error('Unexpected test path');
     }
   });
   const media = createCharacterMedia({ tokenFile, directory });
   const agent = { name: '测试角色', metadata: { card: { portrait: '/assets/lin-wanqing-avatar.png' } } };
-  const result = await media.generate('video', { agent, scene, motion, runId: 'upload-test',
+  const result = await media.generate('video', { agent, scene, motion, duration, runId: 'upload-test',
     signal: new AbortController().signal });
   assert.equal(calls.at(-1), '/v1/media/pika/pika-h3-flex/image-to-video');
   assert.deepEqual(result, { ok: false, error: 'Media service HTTP 422' });
