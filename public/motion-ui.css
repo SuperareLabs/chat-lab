@@ -6,13 +6,9 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .workspace-header,
-  .stage > .chat-panel,
-  .stage > .context-panel,
-  .stage > .memory-panel {
+  .stage > .chat-panel {
     animation: workspace-enter 420ms cubic-bezier(.22, 1, .36, 1) backwards;
   }
 
   .workspace-header { animation-duration: 360ms; animation-delay: 30ms; }
-  .stage > .context-panel { animation-delay: 60ms; }
-  .stage > .memory-panel { animation-delay: 100ms; }
 }

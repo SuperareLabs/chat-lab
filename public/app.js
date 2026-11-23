@@ -5,8 +5,8 @@ import { replyMessages } from './reply-layout.js';
 const el = id => document.getElementById(id);
 const ui = Object.fromEntries([
   'agent-select', 'agent-select-avatar', 'agent-select-label', 'child-select', 'session-select', 'new-child', 'new-session', 'agent-avatar',
-  'agent-name', 'agent-description', 'messages', 'chat-empty', 'chat-empty-title', 'chat-empty-description',
-  'chat-form', 'chat-input', 'send-button', 'model-status', 'chat-status', 'composer-hint', 'session-usage',
+  'agent-name', 'agent-description', 'messages', 'chat-empty', 'chat-empty-title',
+  'chat-form', 'chat-input', 'send-button', 'model-status', 'chat-status', 'session-usage',
   'context-content', 'memory-content', 'child-dialog', 'child-form', 'child-name', 'child-age',
   'child-interests', 'child-error', 'child-cancel', 'app-error', 'context-toggle', 'memory-toggle',
   'context-panel', 'memory-panel', 'new-agent', 'clear-memory', 'guide-open', 'logout',
@@ -275,8 +275,8 @@ function renderSelectors() {
     ui['agent-avatar'].hidden = !avatar;
     ui['agent-avatar'].classList.toggle('is-fallback', avatar === fallbackAvatar);
   }
-  put('agent-name', selected?.name || '选择 Agent');
-  put('agent-description', selected?.description || selected?.definition?.replace(/\s+/g, ' ').slice(0, 72) || '');
+  put('agent-name', selected?.name || '选择角色');
+  put('agent-description', selected?.description || selected?.card?.role || '');
   const modelName = state.model.name || '聊天模型';
   const text = state.model.mode === 'demo' ? `演示模式 · ${modelName}`
     : state.model.configured ? modelName : (state.agents.length ? '模型尚未配置' : '正在连接');
@@ -351,20 +351,26 @@ function appendCharacterMedia(stack, attachment) {
     element.controls = true;
     element.playsInline = true;
     element.preload = 'metadata';
-    element.setAttribute('aria-label', '生成的角色短视频');
+    element.setAttribute('aria-label', '聊天视频');
   } else {
-    element.alt = '生成的角色生活照';
+    element.alt = '聊天图片';
     element.loading = 'lazy';
   }
-  frame.append(element, node('figcaption', '', video ? '生成短视频' : '生成照片'));
+  frame.append(element);
   stack.append(frame);
 }
 
-function appendTyping(stack) {
+function appendTyping(stack, label = '') {
   if (stack.querySelector('.message-typing')) return;
-  const typing = node('div', 'message-bubble message-typing');
-  typing.setAttribute('aria-hidden', 'true');
-  typing.append(node('span'), node('span'), node('span'));
+  const typing = node('div', 'message-bubble message-typing' + (label ? ' is-sending-media' : ''), label);
+  if (label) {
+    typing.setAttribute('role', 'status');
+    typing.setAttribute('aria-live', 'polite');
+  }
+  else {
+    typing.setAttribute('aria-hidden', 'true');
+    typing.append(node('span'), node('span'), node('span'));
+  }
   stack.append(typing);
 }
 
@@ -397,8 +403,7 @@ function renderChat(messages = [], loading = false, { preserveScroll = false } =
   const rows = messages.map(message => chatMessage(message.role, message.text ?? message.content ?? '', false, message.parts, message.attachment).row);
   if (empty) {
     empty.hidden = Boolean(rows.length);
-    put('chat-empty-title', loading ? '正在加载会话…' : !state.agents.length ? '创建第一个角色' : (state.childId ? `和${agent()?.name || 'Agent'}聊聊` : '选择用户，开始试聊'));
-    put('chat-empty-description', loading ? '' : !state.agents.length ? '点击“创建角色”，填写名称和角色设定。' : (state.childId ? '发一条消息，就可以开始这次对话。' : '右上角可以创建一个用户，填写姓名、年龄和兴趣。'));
+    put('chat-empty-title', loading ? '正在加载聊天…' : !state.agents.length ? '创建第一个角色' : (state.childId ? `和${agent()?.name || '角色'}聊聊` : '选择用户，开始聊天'));
     ui.messages.replaceChildren(...rows);
   } else if (rows.length) ui.messages.replaceChildren(...rows);
   else ui.messages.replaceChildren(node('div', 'panel-empty', state.childId ? '发一条消息开始聊天。' : '先选择或创建用户。'));
@@ -822,7 +827,7 @@ function contextOverviewBody(overview) {
 function renderContext(context) {
   const target = ui['context-content'];
   if (!context) {
-    target.replaceChildren(emptyPanel('还没有模型上下文', '发送第一条消息后，这里会显示本轮实际送给模型的内容。'));
+    target.replaceChildren(emptyPanel('还没有聊天详情'));
     return;
   }
   const open = new Set([...target.querySelectorAll('details[open] > summary')].map(item => item.firstChild?.textContent));
@@ -834,7 +839,7 @@ function renderContext(context) {
   const history = context.history || [];
   const calls = context.toolCalls || [];
   const meta = node('div', 'context-meta');
-  meta.append(node('span', 'context-chip', context.model || state.model.name || '聊天模型'));
+  if (context.model && context.model !== state.model.name) meta.append(node('span', 'context-chip', context.model));
   if (context.preparedAt) meta.append(node('span', 'context-chip', dateTime(context.preparedAt)));
   if (Number.isFinite(context.firstDeltaMs)) meta.append(node('span', 'context-chip', `首字 ${context.firstDeltaMs} ms`));
   const summaryList = memories.length ? node('ul', 'context-memory-list') : null;
@@ -1295,7 +1300,7 @@ async function requestReply() {
   state.liveToolCalls = [];
   renderLiveTools();
   show('app-error', '');
-  put('chat-status', `${agent()?.name || 'Agent'}正在回复…`);
+  put('chat-status', '');
   updateControls();
   const input = ui['chat-input'];
   const reply = chatMessage('assistant');
@@ -1339,15 +1344,20 @@ async function requestReply() {
         presentation = presentation.then(() => appendReplyPart(reply.stack, event.text, () => !streamEnded))
           .catch(error => { presentationError ??= error; });
       }
-      if (event.type === 'tool_status') {
-        if (event.status === 'running') put('chat-status', event.label || `${agent()?.name || 'Agent'}正在处理…`);
-        else if (event.status === 'complete') put('chat-status', `${agent()?.name || 'Agent'}正在回复…`);
+      if (event.type === 'tool_status' && event.status === 'running' && event.mediaKind && event.label) {
+        presentation = presentation.then(() => {
+          if (streamEnded) return;
+          removeTyping(reply.stack);
+          appendTyping(reply.stack, event.label);
+          scrollLatest();
+        }).catch(error => { presentationError ??= error; });
       }
       if (event.type === 'character_media') {
         presentation = presentation.then(() => {
+          const follow = ui.messages.scrollHeight - ui.messages.scrollTop - ui.messages.clientHeight < 150;
           removeTyping(reply.stack);
           appendCharacterMedia(reply.stack, event.attachment);
-          scrollLatest(true);
+          if (follow) scrollLatest(true);
         }).catch(error => { presentationError ??= error; });
       }
       if (event.type === 'done') { done = true; streamEnded = true; }
@@ -1464,12 +1474,30 @@ function installListeners() {
       queueMessage();
     }
   });
-  for (const [button, panel] of [['context-toggle', 'context-panel'], ['memory-toggle', 'memory-panel']]) {
-    ui[button]?.addEventListener('click', () => {
-      ui[panel]?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-      ui[panel]?.focus({ preventScroll: true });
-    });
+  const inspectors = ['context', 'memory'];
+  let openInspector;
+  const setInspector = next => {
+    const previous = openInspector;
+    openInspector = next;
+    for (const name of inspectors) {
+      ui[`${name}-panel`].hidden = name !== next;
+      ui[`${name}-toggle`].setAttribute('aria-expanded', String(name === next));
+    }
+    const footer = ui['session-usage']?._usageFooter;
+    if (next !== 'context' && footer) {
+      footer.pinned = null;
+      hideUsageTooltip(footer);
+    }
+    if (next) el(`${next}-close`).focus({ preventScroll: true });
+    else if (previous) ui[`${previous}-toggle`].focus({ preventScroll: true });
+  };
+  for (const name of inspectors) {
+    ui[`${name}-toggle`].addEventListener('click', () => setInspector(openInspector === name ? undefined : name));
+    el(`${name}-close`).addEventListener('click', () => setInspector());
   }
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && openInspector && !document.querySelector('dialog[open]')) setInspector();
+  });
 }
 
 async function loadState(data, { preferDefaultAgent = false } = {}) {
@@ -1744,8 +1772,7 @@ async function completeWorkspaceEntry(serial) {
     el('workspace').hidden = false;
     document.body.classList.remove('entrance-active');
     await workspaceClient?.resumeDeadlines();
-    const recovered = await offerRecovery();
-    if (!recovered && workspaceClient && !(await workspaceClient.metadata()).guideSeen) openGuide();
+    await offerRecovery();
   } catch (error) {
     if (error.needsRecovery && workspaceClient) {
       await showEntryRecovery(serial, await workspaceClient.entryState());
@@ -1871,10 +1898,10 @@ async function refreshLocalView() {
 }
 
 const guideSteps = [
-  { title: '先选一个想聊的角色', target: 'agent-select', copy: '点左上角的 Agent 打开角色图鉴。八位角色都能选择；在「角色概览」了解设定，在「提示词原文」查看实际使用的提示词。', note: '可以随时换角色，每位角色分别保存与你的记忆。' },
-  { title: '也可以创造自己的角色', target: 'new-agent', copy: '点击「创建角色」，填写名称和角色设定，也可以绑定已经注册的音色 ID。创建后会直接公开，大家都能在角色图鉴里选择并聊天。', note: '自己创建的公共角色可以编辑、删除。管理凭证保存在创建时的浏览器，保留网站数据才能继续管理；旧的本机角色不会自动公开。' },
-  { title: '让角色认识你', target: 'new-child', copy: '右上角可以创建用户资料，填写名字、年龄与兴趣。接着就能聊天；点「新会话」开启下一段，旧会话记录仍可查看。', note: '默认提供22岁的访客测试资料。停聊约15分钟后，会在下次打开或页面仍开着时整理记忆。每个人的对话与记忆各自保存在浏览器里。' },
-  { title: '记忆留在你的浏览器', target: 'memory-panel', copy: '右侧可以查看记忆和用户概括。「清空记忆」只清理当前用户与角色的记忆，聊天记录会保留。左侧显示每轮实际送给模型的内容。', note: '共享口令不是账户。换设备、换浏览器不会同步；清理网站数据会丢失记录。请求处理时会临时发送工作区资料给服务端，不写入服务器用户数据库。请自行保留重要信息。' },
+  { title: '选择角色', target: 'agent-select', copy: '点角色头像，可以换一个人聊。每个角色的聊天和记忆分别保存。' },
+  { title: '创建角色', target: 'new-agent', copy: '填写名称和设定即可创建。新角色会出现在大家的角色图鉴里。', note: '只有创建时使用的浏览器能编辑或删除该角色。' },
+  { title: '找回聊天', target: 'session-select', copy: '用「会话」找回之前的聊天，或点「新会话」重新开始。' },
+  { title: '聊天记录与记忆', target: 'memory-toggle', copy: '点聊天窗口右上角的图标，可以查看详情或记忆。聊天和记忆保存在当前浏览器。', note: '换设备或浏览器不会同步，清理网站数据会丢失记录。回复时，服务端会临时处理这次聊天需要的内容。' },
 ];
 let guideIndex = 0;
 function renderGuide() {
@@ -1882,7 +1909,8 @@ function renderGuide() {
   const step = guideSteps[guideIndex];
   el('guide-title').textContent = step.title;
   el('guide-copy').textContent = step.copy;
-  el('guide-note').textContent = step.note;
+  el('guide-note').textContent = step.note || '';
+  el('guide-note').hidden = !step.note;
   el('guide-progress').textContent = `${guideIndex + 1} / ${guideSteps.length}`;
   el('guide-back').disabled = guideIndex === 0;
   el('guide-next').textContent = guideIndex === guideSteps.length - 1 ? '开始聊天' : '下一步';

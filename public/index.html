@@ -35,16 +35,13 @@
     <header class="workspace-header">
       <h1 class="visually-hidden">全Agent轻量聊天实验台</h1>
       <div class="workspace-meta">
-        <span class="local-storage-label"><i aria-hidden="true"></i>当前浏览器保存</span>
         <div class="workspace-links">
-          <button id="guide-open" class="text-action" type="button">使用指南</button>
-          <span aria-hidden="true">·</span>
+          <button id="guide-open" class="text-action" type="button">帮助</button>
           <button id="logout" class="text-action" type="button">退出体验</button>
         </div>
       </div>
       <div class="toolbar" aria-label="聊天选择">
         <div class="toolbar-agent">
-          <span class="control-label">Agent</span>
           <button id="agent-select" class="agent-select-button" type="button" aria-haspopup="dialog" aria-controls="agent-gallery" disabled>
             <img id="agent-select-avatar" src="/assets/benny.png" alt="">
             <span id="agent-select-label">正在加载…</span>
@@ -76,13 +73,19 @@
     <div id="app-error" class="app-error" role="alert" hidden></div>
 
     <main class="stage">
-      <aside id="context-panel" class="panel inspector context-panel" aria-labelledby="context-heading" tabindex="-1">
+      <aside id="context-panel" class="panel inspector context-panel" aria-labelledby="context-heading" tabindex="-1" hidden>
         <header class="panel-header inspector-header">
-          <span class="panel-icon"><img src="/assets/icons/card-text.svg" alt=""></span>
-          <div class="panel-heading-copy"><p class="panel-eyebrow">CONTEXT</p><h2 id="context-heading">模型上下文</h2></div><span class="panel-heading-dot" aria-hidden="true"></span>
+          <h2 id="context-heading">聊天详情</h2>
+          <button id="context-close" class="icon-button inspector-close" type="button" aria-label="关闭聊天详情" title="关闭">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </button>
         </header>
+        <div class="context-overview">
+          <span id="model-status" class="model-status">正在连接…</span>
+          <div id="session-usage" class="session-usage" role="group" aria-label="会话用量与预估费用"></div>
+        </div>
         <div id="context-content" class="inspector-content">
-          <p class="panel-empty">发出一条消息后，可在这里查看实际送给模型的内容。</p>
+          <p class="panel-empty">还没有聊天记录</p>
         </div>
       </aside>
 
@@ -91,13 +94,13 @@
           <div class="chat-identity">
             <img id="agent-avatar" class="agent-avatar" src="/assets/benny.png" alt="">
             <div class="agent-copy">
-              <h2 id="agent-name">选择 Agent</h2>
+              <h2 id="agent-name">选择角色</h2>
               <p id="agent-description"></p>
             </div>
           </div>
-          <div class="panel-shortcuts" aria-label="实验详情">
-            <button id="context-toggle" class="icon-button" type="button" aria-controls="context-panel" aria-label="查看模型上下文" title="模型上下文"><img src="/assets/icons/card-text.svg" alt=""></button>
-            <button id="memory-toggle" class="icon-button" type="button" aria-controls="memory-panel" aria-label="查看记忆" title="记忆"><img src="/assets/icons/archive.svg" alt=""></button>
+          <div class="panel-shortcuts" aria-label="聊天选项">
+            <button id="context-toggle" class="icon-button" type="button" aria-controls="context-panel" aria-expanded="false" aria-label="聊天详情" title="聊天详情"><img src="/assets/icons/card-text.svg" alt=""></button>
+            <button id="memory-toggle" class="icon-button" type="button" aria-controls="memory-panel" aria-expanded="false" aria-label="记忆" title="记忆"><img src="/assets/icons/archive.svg" alt=""></button>
           </div>
         </header>
 
@@ -106,7 +109,6 @@
           <div id="chat-empty" class="chat-empty">
             <img src="/assets/benny.png" alt="" class="empty-avatar">
             <p id="chat-empty-title" class="chat-empty-title">开始一段聊天</p>
-            <p id="chat-empty-description">选择用户和 Agent，就可以开始试聊。</p>
           </div>
         </div>
 
@@ -117,22 +119,19 @@
             <textarea id="chat-input" name="message" rows="1" placeholder="选择或创建角色后开始聊天…" maxlength="4000" disabled></textarea>
             <button id="send-button" class="send-button" type="submit" aria-label="发送消息" title="发送消息" disabled><img src="/assets/icons/arrow-up.svg" alt=""></button>
           </form>
-          <footer class="composer-meta">
-            <span id="model-status" class="model-status" aria-live="polite">正在连接实验台</span>
-            <div id="session-usage" class="session-usage" role="group" aria-label="会话用量与预估费用"></div>
-            <span id="composer-hint" class="composer-hint">Enter 发送 · Shift + Enter 换行</span>
-          </footer>
         </div>
       </section>
 
-      <aside id="memory-panel" class="panel inspector memory-panel" aria-labelledby="memory-heading" tabindex="-1">
+      <aside id="memory-panel" class="panel inspector memory-panel" aria-labelledby="memory-heading" tabindex="-1" hidden>
         <header class="panel-header inspector-header">
-          <span class="panel-icon"><img src="/assets/icons/archive.svg" alt=""></span>
-          <div class="panel-heading-copy"><p class="panel-eyebrow">MEMORY</p><h2 id="memory-heading">记忆</h2></div><button id="clear-memory" class="text-action clear-memory-button" type="button" disabled>清空记忆</button>
+          <h2 id="memory-heading">记忆</h2>
+          <button id="clear-memory" class="text-action clear-memory-button" type="button" disabled>清空记忆</button>
+          <button id="memory-close" class="icon-button inspector-close" type="button" aria-label="关闭记忆" title="关闭">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </button>
         </header>
-        <p class="memory-local-note">当前用户 × 当前角色 · 本机保存</p>
         <div id="memory-content" class="inspector-content">
-          <p class="panel-empty">选择用户和 Agent 后，可查看这组对话积累的记忆。</p>
+          <p class="panel-empty">还没有记忆</p>
         </div>
       </aside>
     </main>
@@ -256,12 +255,12 @@
     </form>
   </dialog>
   <dialog id="guide-dialog" class="guide-dialog" aria-labelledby="guide-title" aria-describedby="guide-copy">
-    <div class="guide-kicker"><span>第一次来到这里</span><span id="guide-progress">1 / 4</span></div>
+    <div class="guide-kicker"><span id="guide-progress">1 / 4</span></div>
     <h2 id="guide-title"></h2>
     <p id="guide-copy" class="guide-copy"></p>
     <p id="guide-note" class="guide-note"></p>
     <div class="guide-actions">
-      <button id="guide-skip" class="text-action" type="button">跳过引导</button>
+      <button id="guide-skip" class="text-action" type="button">关闭帮助</button>
       <div><button id="guide-back" class="secondary-button" type="button">上一步</button><button id="guide-next" class="primary-button" type="button">下一步</button></div>
     </div>
   </dialog>
