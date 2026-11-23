@@ -65,6 +65,54 @@ test('character video is delivered and replayed without another media generation
   assert.equal(requested.length, 1);
 });
 
+test('failed media sends leave a conversational reply and keep the underlying error in context', async t => {
+  for (const kind of ['photo', 'video']) {
+    for (const error of ['Provider timed out', 'Media service HTTP 503']) {
+      await t.test(`${kind}: ${error}`, async () => {
+        const name = `send_character_${kind}`;
+        const argumentsJSON = JSON.stringify({ framing: 'subject', scene, ...(kind === 'video' ? { motion, duration } : {}) });
+        let attempts = 0;
+        const provider = {
+          async chat() {
+            return { content: '', toolCalls: [{ id: 'send-media', type: 'function', function: { name, arguments: argumentsJSON } }] };
+          },
+        };
+        const workspace = createBrowserWorkspace({
+          provider, defaultAgents: [role], defaultChildren: [{ name: '访客', age: 22 }],
+          model: { name: 'mock', configured: true }, memoryModel: { configured: false },
+          characterMedia: {
+            available: () => true,
+            async generate(actualKind) {
+              assert.equal(actualKind, kind);
+              attempts++;
+              return { ok: false, error };
+            },
+          },
+        });
+        const boot = await workspace.execute({ method: 'GET', path: '/api/state' });
+        const scope = { childId: boot.value.children[0].id, agentId: role.id };
+        const body = { ...scope, text: '拍一下你现在在做什么', requestId: 'unavailable-media-once' };
+        const events = [];
+        const result = await workspace.execute({ method: 'POST', path: '/api/chat', snapshot: boot.snapshot, scope, body },
+          { emit: event => events.push(event) });
+        const expected = '网络有点不好，等一下我再发给你吧。';
+        assert.equal(attempts, 1);
+        assert(events.some(event => event.type === 'tool_status' && event.status === 'complete'));
+        assert(events.some(event => event.type === 'done'));
+        assert(!events.some(event => event.type === 'error' || event.type === 'character_media'));
+        assert.equal(events.find(event => event.type === 'reply_part' && event.kind === 'answer')?.text, expected);
+        const sessionId = events.find(event => event.type === 'start').sessionId;
+        const session = await workspace.execute({ method: 'GET', path: `/api/sessions/${sessionId}?${new URLSearchParams(scope)}`, snapshot: result.snapshot, scope });
+        const reply = session.value.messages.findLast(message => message.role === 'assistant');
+        assert(reply.text.endsWith(expected));
+        assert(!reply.text.includes(error));
+        assert.deepEqual(session.value.context.toolCalls[0].result, { ok: false, error });
+        assert.equal(session.value.context.toolCalls[0].usage.status, 'failed');
+      });
+    }
+  }
+});
+
 for (const [framing, fixedVoice] of [['selfie', false], ['selfie', true], ['subject', false], ['subject', true]]) {
 test(`Pika generates ${framing} framing with ${fixedVoice ? 'measured ICL audio' : 'native speech'}`, async t => {
   const directory = await mkdtemp(join(tmpdir(), 'chatlab-signed-upload-'));
