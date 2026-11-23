@@ -8,9 +8,13 @@
 
 ## 千问生活照
 
-照片使用本地部署的 `qwen-image-2.1`，固定为 768×1024 手机随拍。角色入镜时给设定图作身份参考，保留辨识特征和拍摄现场。只拍主体时直接文生图，用自然的后摄构图。两条路径都使用真实环境光、暗部细噪点和轻微手持感，关闭自动扩写。
+ChatLab 通过本机 Service Clan 的 `gpu-qwen-image-21-app-production` 调用 Croco App 的生产 Qwen 网关（`:5889`）。使用 `qwen-image-2.1` 的 `wanwen-viggle9-1` 契约和固定 9 步的 `viggle9-base-tail-r256` 配方。
 
-[Qwen Image 2.1 参考图改写指南](https://github.com/QwenLM/Qwen-Image-2.1/blob/main/prompt_rewrite/prompts/system_prompt_edit.txt) · [阿里云图像编辑指南](https://www.alibabacloud.com/help/en/model-studio/qwen-image-edit-guide)
+角色入镜用 576×1024（竖屏 9:16）。先上传一张设定图作为身份参考，再用 `i2i` 提交。只拍主体用 768×1024（竖屏 3:4），从后摄视角构图，使用 `t2i`。两条路径都保留真实环境光、暗部细噪点和轻微手持感。
+
+提交时设置 `X-Online-Capability: image-generation`，`Idempotency-Key` 沿用同一 `client_job_id`。任务成功后从产物列表取得已就绪的 PNG，再保存到本机聊天媒体目录。
+
+[Service Clan 生产 App 生图网关接入文档](http://127.0.0.1:47391/docs/services/gpu-qwen-image-21-app-production/) · [Qwen Image 2.1 参考图改写指南](https://github.com/QwenLM/Qwen-Image-2.1/blob/main/prompt_rewrite/prompts/system_prompt_edit.txt)
 
 ## H3 Flex 生活短视频
 
@@ -26,4 +30,4 @@ Pika 480p 参考图生视频按 USD 0.03／输出秒估算，主体文生视频�
 
 ## 本地启动
 
-在免登录、仅监听 `127.0.0.1` 的浏览器工作区，设置 `CHAT_SERVICE_CLAN_TOKEN_FILE` 为本机 Service Clan 的 `.local/access-token` 绝对路径，设置 `CHAT_CHARACTER_MEDIA_DIR` 为专用本地媒体目录。照片需要 Service Clan 中的 `gpu-qwen-image-21`。视频需要 `pika-h3-flex` 和 PATH 中的 FFmpeg。固定音色的有声视频另需 `volc-icl20-sse`。设定图来自应用内已登记的角色素材，SVG 需要同名 PNG 参考图。影像文件保存在媒体目录，浏览器聊天快照只保存引用。若 Node 启用了环境代理，确保 `localhost,127.0.0.1` 绕过代理。
+在免登录、仅监听 `127.0.0.1` 的浏览器工作区，设置 `CHAT_SERVICE_CLAN_TOKEN_FILE` 为本机 Service Clan 的 `.local/access-token` 绝对路径，设置 `CHAT_CHARACTER_MEDIA_DIR` 为专用本地媒体目录。照片需要 Service Clan 中的 `gpu-qwen-image-21-app-production` 和对应的 `QWEN_APP_API_TOKEN`。视频需要 `pika-h3-flex` 和 PATH 中的 FFmpeg。固定音色的有声视频另需 `volc-icl20-sse`。设定图来自应用内已登记的角色素材，SVG 需要同名 PNG 参考图。影像文件保存在媒体目录，浏览器聊天快照只保存引用。若 Node 启用了环境代理，确保 `localhost,127.0.0.1` 绕过代理。

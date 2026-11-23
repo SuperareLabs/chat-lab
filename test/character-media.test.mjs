@@ -198,30 +198,71 @@ test(`Pika generates ${framing} framing with ${fixedVoice ? 'measured ICL audio'
 });
 }
 
-test('a photo of a subject uses Qwen without uploading a character portrait', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'chatlab-photo-subject-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
-  const tokenFile = join(directory, 'token');
-  await writeFile(tokenFile, 'test-token');
-  const image = await readFile(new URL('../public/assets/lin-wanqing-avatar.png', import.meta.url));
-  t.mock.method(globalThis, 'fetch', async (target, options) => {
-    const path = new URL(target).pathname;
-    if (path === '/api/services/gpu-qwen-image-21/connection') {
-      return Response.json({ base_url: 'https://test-gpu.example', model: 'qwen-image-2.1' });
-    }
-    if (path === '/api/jobs') {
-      const request = JSON.parse(options.body);
-      assert.equal(request.parameters.mode, 't2i');
-      assert.deepEqual(request.inputs, []);
-      assert.match(request.parameters.prompt, /operator stays off-camera/);
-      return Response.json({ job_id: 'photo' });
-    }
-    if (path === '/api/jobs/photo') return Response.json({ terminal: true, status: 'succeeded' });
-    if (path === '/api/jobs/photo/outputs/image/content') return new Response(image);
-    throw new Error('Unexpected photo request');
+for (const framing of ['subject', 'selfie']) {
+  test(`a ${framing} photo uses the production Qwen contract and delivers the ready PNG`, async t => {
+    const directory = await mkdtemp(join(tmpdir(), 'chatlab-production-photo-'));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const tokenFile = join(directory, 'token');
+    await writeFile(tokenFile, 'test-token');
+    const portrait = '/assets/lin-wanqing-avatar.png';
+    const image = await readFile(new URL('../public' + portrait, import.meta.url));
+    const selfie = framing === 'selfie';
+    const assetId = '11111111-2222-4333-8444-555555555555';
+    let uploads = 0;
+    let outputReads = 0;
+    t.mock.method(globalThis, 'fetch', async (target, options) => {
+      const url = new URL(target);
+      if (url.pathname === '/api/services/gpu-qwen-image-21-app-production/connection') {
+        assert.equal(options.headers['X-Service-Clan-Token'], 'test-token');
+        return Response.json({ base_url: 'https://8.137.116.27:5889', model: 'qwen-image-2.1',
+          headers: { Authorization: 'Bearer production-test-key' } });
+      }
+      assert.equal(url.origin, 'https://8.137.116.27:5889');
+      assert.equal(options.headers.Authorization, 'Bearer production-test-key');
+      if (url.pathname === '/api/v2/assets/images') {
+        assert(selfie);
+        assert.equal(options.method, 'POST');
+        const file = options.body.get('file');
+        assert.equal(file.name, 'lin-wanqing-avatar.png');
+        assert.deepEqual(Buffer.from(await file.arrayBuffer()), image);
+        uploads++;
+        return Response.json({ asset_id: assetId }, { status: 201 });
+      }
+      if (url.pathname === '/api/v2/jobs') {
+        assert.equal(options.method, 'POST');
+        const request = JSON.parse(options.body);
+        assert.equal(options.headers['X-Online-Capability'], 'image-generation');
+        assert.equal(options.headers['Idempotency-Key'], request.client_job_id);
+        assert.match(request.client_job_id, /^chatlab-[a-f0-9]{40}$/);
+        const { prompt, ...format } = request.parameters;
+        assert.match(prompt, selfie ? /Vertical 9:16.+<image1>/ : /Vertical 3:4.+operator stays off-camera/);
+        assert.deepEqual({ ...request, parameters: format }, {
+          model_id: 'qwen-image-2.1', operation: 'image.generate', contract_version: 'wanwen-viggle9-1',
+          client_job_id: request.client_job_id,
+          parameters: { mode: selfie ? 'i2i' : 't2i', width: selfie ? 576 : 768, height: 1024 },
+          inputs: selfie ? [{ role: 'reference_image', asset_id: assetId }] : [],
+        });
+        return Response.json({ job_id: 'photo' }, { status: 202 });
+      }
+      if (url.pathname === '/api/v2/jobs/photo') return Response.json({ status: 'succeeded' });
+      if (url.pathname === '/api/v2/jobs/photo/outputs') {
+        outputReads++;
+        return Response.json({ items: [
+          { output_type: 'image', output_id: 'thumbnail', delivery_state: 'ready', media_type: 'image/jpeg' },
+          { output_type: 'image', output_id: 'primary-png', delivery_state: selfie && outputReads === 1 ? 'pending' : 'ready',
+            media_type: 'image/png' },
+        ] });
+      }
+      if (url.pathname === '/api/v2/jobs/photo/outputs/primary-png/content') return new Response(image);
+      throw new Error('Unexpected photo request');
+    });
+    const media = createCharacterMedia({ tokenFile, directory });
+    const result = await media.generate('photo', { agent: { name: '角色', metadata: { card: { portrait } } },
+      framing, scene: '窗边的小蛋糕', runId: 'photo-test', signal: new AbortController().signal });
+    assert.equal(result.ok, true);
+    assert.equal(uploads, Number(selfie));
+    assert.equal(outputReads, selfie ? 2 : 1);
+    const saved = await media.asset(result.attachment.id, 'photo');
+    assert.deepEqual(await readFile(saved.file), image);
   });
-  const media = createCharacterMedia({ tokenFile, directory });
-  const result = await media.generate('photo', { agent: { name: '角色' }, framing: 'subject', scene: '窗边的小蛋糕',
-    runId: 'photo-test', signal: new AbortController().signal });
-  assert.equal(result.ok, true);
-});
+}
