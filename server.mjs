@@ -13,6 +13,8 @@ import { createBrowserWorkspace, BROWSER_WORKSPACE_MAX_BYTES } from './lib/brows
 import { PublicCatalog } from './lib/public-catalog.mjs';
 import { loadSharedPrompts } from './lib/shared-prompts.mjs';
 import { createCharacterMedia } from './lib/character-media.mjs';
+import { createToolDecision } from './lib/tool-decision.mjs';
+import { createJevRelay } from './lib/jev-relay.mjs';
 
 const PUBLIC = fileURLToPath(new URL('./public/', import.meta.url));
 const APP_VERSION = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
@@ -191,11 +193,19 @@ export function createLabServer(options = {}) {
   const defaultAgents = browserMode ? config.defaultAgents ?? defaults.agents : [];
   const retiredAgentIds = new Set(config.retiredAgentIds ?? defaults.retiredAgentIds ?? []);
   const sharedPrompts = browserMode ? config.sharedPrompts ?? loadSharedPrompts() : [];
-  const characterMedia = browserMode && config.localNoAuth && config.host === '127.0.0.1'
-    ? config.characterMedia ?? (config.serviceClanTokenFile && config.characterMediaDirectory
-      ? createCharacterMedia({ tokenFile: config.serviceClanTokenFile, directory: config.characterMediaDirectory }) : null)
+  const localBrowserMode = browserMode && config.localNoAuth && config.host === '127.0.0.1';
+  const localMedia = localBrowserMode && !config.characterMedia && config.serviceClanTokenFile && config.characterMediaDirectory;
+  const relay = localMedia || (localBrowserMode && config.jevRelay && config.serviceClanTokenFile && !config.toolDecision)
+    ? createJevRelay({ tokenFile: config.serviceClanTokenFile }) : null;
+  const characterMedia = localBrowserMode
+    ? config.characterMedia ?? (localMedia ? createCharacterMedia({ tokenFile: config.serviceClanTokenFile,
+      directory: config.characterMediaDirectory, pikaRelay: relay }) : null)
     : null;
-  const browserWorkspace = browserMode ? createBrowserWorkspace({ ...config, characterMedia, appVersion: APP_VERSION,
+  const toolDecision = localBrowserMode
+    ? config.toolDecision ?? (config.serviceClanTokenFile
+      ? createToolDecision({ tokenFile: config.serviceClanTokenFile, relay: config.jevRelay ? relay : null }) : null)
+    : null;
+  const browserWorkspace = browserMode ? createBrowserWorkspace({ ...config, characterMedia, toolDecision, appVersion: APP_VERSION,
     catalog, defaultAgents, retiredAgentIds: [...retiredAgentIds], sharedPrompts,
     defaultChildren: config.defaultChildren ?? [{ name: '访客', age: 22, interests: [] }],
   }) : null;
@@ -432,6 +442,7 @@ export function createLabServer(options = {}) {
           }
         });
       });
+      relay?.start();
       runtime?.tick();
       return server.address();
     },
@@ -441,6 +452,7 @@ export function createLabServer(options = {}) {
       if (!drain) for (const controller of workspaceControllers) controller.abort();
       await Promise.allSettled([...activeWorkspaces]);
       await runtime?.stop({ drain });
+      await relay?.close();
       await closed;
       store?.close();
       gate?.close();

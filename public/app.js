@@ -19,7 +19,7 @@ const state = {
   editorSaving: false, queueSaving: false, authenticated: false,
   pendingMessages: [], pendingTimer: null,
   memorySignature: null, memoryOpen: new Set(), memoryDetails: new Map(), memoryData: null, memoryFilter: 'active', polling: false,
-  sessionUsage: null, liveToolCalls: null,
+  sessionUsage: null, liveToolCalls: null, availableTools: null,
   catalogRevision: null, catalogAvailable: false, catalogAgents: [],
 };
 const selectionKey = 'croco-lab-v1.selection';
@@ -319,7 +319,7 @@ function updateControls() {
 }
 
 
-function chatMessage(role, text, animate = false, replyParts, attachment) {
+function chatMessage(role, text, animate = false, replyParts, attachment, attachmentAfterParts) {
   const assistant = role === 'assistant';
   const row = node('div', `message-row ${assistant ? 'is-assistant' : 'is-user'}`);
   if (assistant && imageForAgent()) {
@@ -331,8 +331,12 @@ function chatMessage(role, text, animate = false, replyParts, attachment) {
   }
   const stack = node('div', 'message-stack');
   const bubbles = assistant ? replyMessages(text, replyParts) : text === undefined ? [] : [text];
-  for (const part of bubbles) stack.append(messageBubble(part, animate));
-  if (assistant) appendCharacterMedia(stack, attachment);
+  const mediaPosition = Number.isInteger(attachmentAfterParts) ? Math.min(attachmentAfterParts, bubbles.length) : bubbles.length;
+  for (const [index, part] of bubbles.entries()) {
+    if (assistant && index === mediaPosition) appendCharacterMedia(stack, attachment);
+    stack.append(messageBubble(part, animate));
+  }
+  if (assistant && mediaPosition === bubbles.length) appendCharacterMedia(stack, attachment);
   row.append(stack);
   return { row, stack };
 }
@@ -402,7 +406,8 @@ function renderChat(messages = [], loading = false, { preserveScroll = false } =
   const scrollTop = ui.messages.scrollTop;
   const followLatest = ui.messages.scrollHeight - scrollTop - ui.messages.clientHeight < 150;
   const empty = ui['chat-empty'];
-  const rows = messages.map(message => chatMessage(message.role, message.text ?? message.content ?? '', false, message.parts, message.attachment).row);
+  const rows = messages.map(message => chatMessage(message.role, message.text ?? message.content ?? '', false,
+    message.parts, message.attachment, message.attachmentAfterParts).row);
   if (empty) {
     empty.hidden = Boolean(rows.length);
     put('chat-empty-title', loading ? '正在加载聊天…' : !state.agents.length ? '创建第一个角色' : (state.childId ? `和${agent()?.name || '角色'}聊聊` : '选择用户，开始聊天'));
@@ -753,6 +758,54 @@ function toolCallSection(calls, open = false) {
   return details;
 }
 
+function toolDecisionSection(decision, open = true) {
+  const percent = value => Number.isFinite(value)
+    ? value.toLocaleString('zh-CN', { style: 'percent', maximumFractionDigits: 1 }) : '—';
+  const content = [dataGrid([
+    ['对话上下文', `最近 ${decision.turns} 轮（含本轮）`],
+    ['模型', decision.resolvedModel || decision.model],
+    ['链路', decision.route === 'chengdu-singapore' ? '本机 → 成都 → 新加坡 → OpenRouter' : null],
+    ['耗时', Number.isFinite(decision.elapsedMs) ? `${decision.elapsedMs} ms` : null],
+    ['调用门槛', Number.isFinite(decision.threshold) ? `超过 ${percent(decision.threshold)}` : null],
+    ['最高分工具', decision.selectedTool],
+    ['本轮流程', ({ reply: '直接回复', media: '先生成角色影像', standard: '普通工具', fallback: '按普通聊天流程回复' })[decision.mode]],
+  ])];
+  let count;
+  if (decision.status === 'succeeded') {
+    const probabilities = Array.isArray(decision.probabilities) ? decision.probabilities : [];
+    count = probabilities.length;
+    content.push(dataGrid([
+      ['需要调用工具', percent(decision.anyToolProbability)],
+      ['无需调用工具', percent(1 - decision.anyToolProbability)],
+      ...probabilities.map(({ name, probability }) => [name, percent(probability)]),
+    ]));
+  } else if (decision.status === 'running') content.push(node('p', 'quiet', '正在判断是否需要工具…'));
+  else {
+    const reasons = { credential: '无法从 Service Clan 获取 Jev 连接', timeout: 'Jev 判断超时',
+      relay: '成都 → 新加坡隧道不可用，已跳过工具判断',
+      provider: 'OpenRouter 请求失败', response: 'Jev 未返回完整的工具概率' };
+    const reason = reasons[decision.reason] || '暂未取得工具判断结果';
+    content.push(node('p', 'quiet', decision.httpStatus ? `${reason}（HTTP ${decision.httpStatus}）` : reason));
+  }
+  const details = section('工具判断概率', content, open, count);
+  details.dataset.section = 'tool-decision';
+  return details;
+}
+
+function mediaGenerationPromptSection(prompt, open = true) {
+  const details = section('影像生成原始提示词', [node('p', 'inspector-label', prompt.tool), pretty(prompt.text)], open);
+  details.dataset.section = 'media-generation-prompt';
+  return details;
+}
+
+function renderLiveInspectorSection(name, render) {
+  const target = ui['context-content'];
+  const previous = target.querySelector(`[data-section="${name}"]`);
+  const next = render(previous?.open ?? true);
+  if (previous) previous.replaceWith(next);
+  else target.insertBefore(next, target.querySelector('[data-section="tool-calls"]'));
+}
+
 function renderLiveTools() {
   const target = ui['context-content'];
   if (!target || !Array.isArray(state.liveToolCalls)) return;
@@ -828,14 +881,24 @@ function contextOverviewBody(overview) {
 
 function renderContext(context) {
   const target = ui['context-content'];
+  const previousDecision = target.querySelector('[data-section="tool-decision"]');
+  const previousMediaPrompt = target.querySelector('[data-section="media-generation-prompt"]');
+  const open = new Set([...target.querySelectorAll('details[open] > summary')].map(item => item.firstChild?.textContent));
+  const { definitions, byAgent } = state.availableTools ?? {};
+  const availableNames = byAgent?.[state.agentId];
+  const liveTools = Array.isArray(availableNames) ? availableNames.map(name => definitions[name]) : null;
+  const recordedTools = context?.tools ?? [];
+  const tools = liveTools ?? recordedTools;
+  const toolTitle = liveTools ? '可用工具' : '该轮可用工具';
+  const toolNames = tools.length ? node('div', 'context-meta') : node('p', 'quiet', '没有可用工具。');
+  for (const tool of tools) toolNames.append(node('span', 'context-chip', tool.function?.name || tool.name || String(tool)));
+  const toolsSection = section(toolTitle, [toolNames, ...(tools.length ? [pretty(tools)] : [])], open.has(toolTitle), tools.length);
   if (!context) {
-    target.replaceChildren(emptyPanel('还没有聊天详情'));
+    target.replaceChildren(...(liveTools ? [toolsSection] : []), emptyPanel('还没有聊天详情'));
     return;
   }
-  const open = new Set([...target.querySelectorAll('details[open] > summary')].map(item => item.firstChild?.textContent));
-  const first = !target.querySelector('.inspector-section');
+  const first = ![...target.querySelectorAll('details > summary')].some(item => item.firstChild?.textContent === '本轮注入');
   const time = context.localTime;
-  const tools = context.tools || [];
   const memories = context.recentMemories || [];
   const events = Array.isArray(context.recentEvents) ? context.recentEvents : null;
   const history = context.history || [];
@@ -848,8 +911,8 @@ function renderContext(context) {
   for (const item of memories) summaryList.append(node('li', '', `${dateLabel(item.mentionedOn)} · ${item.summary}`));
   const eventList = events?.length ? node('ul', 'context-memory-list') : null;
   for (const item of events ?? []) eventList.append(node('li', '', `${dateTime(item.lastMentionedAt)} · ${item.summary}`));
-  const toolNames = tools.length ? node('div', 'context-meta') : node('p', 'quiet', '本轮没有开放工具。');
-  for (const tool of tools) toolNames.append(node('span', 'context-chip', tool.function?.name || tool.name || String(tool)));
+  const historicalTools = liveTools && JSON.stringify(liveTools) !== JSON.stringify(recordedTools)
+    ? [node('p', 'inspector-label', '该轮工具定义'), pretty(recordedTools)] : [];
   const sections = [meta,
     section('本轮注入', dataGrid([
       ['当地时间', typeof time === 'string' ? time : [time?.localDate, time?.localTime, time?.timezone].filter(Boolean).join(' ')],
@@ -863,9 +926,11 @@ function renderContext(context) {
     section('记忆加载', node('p', 'quiet', '具体记忆由聊天 Agent 按话题搜索；实际读入内容见下方工具调用和原始模型输入。'), open.has('记忆加载')),
     section('固定提示词', pretty(context.system || ''), open.has('固定提示词')),
     section('会话消息', pretty(history), open.has('会话消息'), history.length),
-    section('可用工具', [toolNames, ...(tools.length ? [pretty(tools)] : [])], open.has('可用工具'), tools.length),
+    toolsSection,
+    ...(context.toolDecision ? [toolDecisionSection(context.toolDecision, previousDecision?.open ?? true)] : []),
+    ...(context.mediaGenerationPrompt ? [mediaGenerationPromptSection(context.mediaGenerationPrompt, previousMediaPrompt?.open ?? true)] : []),
     toolCallSection(calls, open.has('工具调用')),
-    section('原始模型输入', [...(context.recentConversationTurns ? [node('p', 'quiet', '近期对话摘录已计入本轮输入，审计记录保留注入轮数。')] : []), pretty(context.requestMessages || []), ...(context.modelRequests?.length ? [
+    section('原始模型输入', [...(context.recentConversationTurns ? [node('p', 'quiet', '近期对话摘录已计入本轮输入，审计记录保留注入轮数。')] : []), pretty(context.requestMessages || []), ...historicalTools, ...(context.modelRequests?.length ? [
       node('p', 'inspector-label', '模型请求统计'), pretty(context.modelRequests),
     ] : [])], open.has('原始模型输入')),
   ];
@@ -1300,6 +1365,7 @@ async function requestReply() {
   if (!batch.length) return;
   state.sending = true;
   state.liveToolCalls = [];
+  for (const detail of ui['context-content'].querySelectorAll('[data-section="tool-decision"], [data-section="media-generation-prompt"]')) detail.remove();
   renderLiveTools();
   show('app-error', '');
   put('chat-status', '');
@@ -1334,6 +1400,12 @@ async function requestReply() {
       if (event.sessionId) id = event.sessionId;
       if (event.type === 'start') began = true;
       if (event.type === 'usage' && (!event.sessionId || event.sessionId === id)) renderUsage(event.usage);
+      if (event.type === 'tool_decision' && event.decision) {
+        renderLiveInspectorSection('tool-decision', open => toolDecisionSection(event.decision, open));
+      }
+      if (event.type === 'media_generation_prompt' && event.prompt) {
+        renderLiveInspectorSection('media-generation-prompt', open => mediaGenerationPromptSection(event.prompt, open));
+      }
       if (event.type === 'tool_usage' && (!event.sessionId || event.sessionId === id)) {
         recordLiveTool(event.call);
         if (event.usage) renderUsage(event.usage);
@@ -1533,6 +1605,7 @@ async function loadState(data, { preferDefaultAgent = false } = {}) {
   state.agents = data.agents || [];
   state.children = data.children || [];
   state.model = data.model || {};
+  state.availableTools = data.availableTools ?? null;
   const defaultAgentId = state.agents.find(item => item.id === 'shen-zhiheng')?.id || state.agents.find(item => item.id === 'lin-xiaoman')?.id || state.agents[0]?.id || '';
   state.agentId = (preferDefaultAgent ? defaultAgentId : '') ||
     state.agents.find(item => item.id === saved.agentId)?.id || defaultAgentId;
@@ -1589,8 +1662,10 @@ async function applyAgentChange(savedAgent, { created }) {
   if (local) await refreshCatalogPermissions();
   const data = local ? await workspaceClient.api('/api/state', undefined, 'GET', { force: true }) : await api('/api/state');
   if (!data.agents?.some(item => item.id === savedAgent.id)) throw new Error('新角色尚未载入，请重试。');
+  const toolsChanged = JSON.stringify(state.availableTools ?? null) !== JSON.stringify(data.availableTools ?? null);
   state.agents = data.agents;
   state.model = data.model || {};
+  state.availableTools = data.availableTools ?? null;
   syncAgentGalleryRoute.refresh();
   if (created) {
     state.agentId = savedAgent.id;
@@ -1598,6 +1673,7 @@ async function applyAgentChange(savedAgent, { created }) {
   } else {
     // Editing keeps the selected user, session, conversation and memory view.
     renderSelectors();
+    if (toolsChanged) renderContext(state.conversation?.context ?? null);
     saveSelection();
   }
 }
@@ -1713,6 +1789,8 @@ setInterval(async () => {
     if (state.busy || state.editorSaving || state.sending || state.pendingMessages.length) return;
     if (state.dataVersion !== (data.dataVersion || '')) await runAction(() => loadState(data));
     else {
+      const toolsChanged = JSON.stringify(state.availableTools ?? null) !== JSON.stringify(data.availableTools ?? null);
+      state.availableTools = data.availableTools ?? null;
       if (JSON.stringify(state.agents) !== JSON.stringify(data.agents || [])) {
         state.agents = data.agents || [];
         syncAgentGalleryRoute.refresh();
@@ -1721,6 +1799,7 @@ setInterval(async () => {
           await changeScope();
         } else renderSelectors();
       }
+      if (toolsChanged) renderContext(state.conversation?.context ?? null);
       await Promise.all([refreshMemory(), refreshUsage()]);
     }
   } catch { /* An active action shows its own network errors. */ }
@@ -1892,7 +1971,9 @@ async function refreshLocalView() {
     }
     const agentsChanged = JSON.stringify(state.agents) !== JSON.stringify(data.agents);
     const childrenChanged = JSON.stringify(state.children) !== JSON.stringify(data.children);
+    const toolsChanged = JSON.stringify(state.availableTools ?? null) !== JSON.stringify(data.availableTools ?? null);
     state.agents = data.agents; state.children = data.children; state.model = data.model || {};
+    state.availableTools = data.availableTools ?? null;
     if (agentsChanged) syncAgentGalleryRoute.refresh();
 
     const sessions = (await api(scoped('/api/sessions'))).sessions || [];
@@ -1911,7 +1992,7 @@ async function refreshLocalView() {
     if (agentsChanged || childrenChanged || sessionsChanged || selectionChanged) renderSelectors();
     if (selectionChanged) saveSelection();
     if (messagesChanged) renderChat(conversation?.messages || [], false, { preserveScroll: !selectionChanged });
-    if (contextChanged) renderContext(conversation?.context ?? null);
+    if (contextChanged || toolsChanged) renderContext(conversation?.context ?? null);
     if (usageChanged) renderUsage(conversation?.usage ?? null);
     await refreshMemory();
     if (current()) updateControls();
