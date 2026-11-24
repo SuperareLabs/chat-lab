@@ -1,0 +1,219 @@
+[
+  {
+    "template_id": "SHOT_SELFIE_CLOSE",
+    "name": "前置摄像头近景自拍",
+    "description": "手持手机前置摄像头拍摄的大头或肩部特写自拍，带有微广角畸变与随手举拍感。",
+    "api_params": {
+      "aspect_ratio": "9:16",
+      "primary_subject_requirement": "character_only",
+      "character_injection_policy": "FULL_SYNC",
+      "reference_weight": 0.8
+    },
+    "locked_prompt": {
+      "camera_prefix": "Raw candid front-facing iPhone selfie, 24mm wide-angle lens slight facial distortion, arm-length high-angle perspective, slightly tilted casual framing, close-up head and shoulders shot.",
+      "realism_suffix": "Natural skin texture with visible pores and minor imperfections, no beauty filter, uneven ambient lighting, slight handheld micro-blur, authentic unedited smartphone snapshot."
+    },
+    "slots_schema": {
+      "primary_subject": {
+        "required": true,
+        "allowed_types": [
+          "character"
+        ],
+        "instruction": "描述面部表情、眼神方向及头部姿态（如直视镜头微微笑、略显疲惫地单手托腮）"
+      },
+      "secondary_subject": {
+        "required": false,
+        "allowed_types": [
+          "object_bound",
+          "object_unbound"
+        ],
+        "instruction": "可选，描述贴近脸旁或手持举起的小物件（如一杯冰美式、刚拆开的快递盒）"
+      },
+      "environment_context": {
+        "required": true,
+        "instruction": "描述身后局部背景及当前光线色温（如凌乱的卧室床头与台灯暖光、办公室格子间顶灯）"
+      }
+    }
+  },
+  {
+    "template_id": "SHOT_SELFIE_MIRROR",
+    "name": "镜面及反光介质自拍",
+    "description": "对着镜子、电梯金属门或玻璃橱窗拍摄的半身或全身自拍，手机必须真实入镜。",
+    "api_params": {
+      "aspect_ratio": "9:16",
+      "primary_subject_requirement": "character_only",
+      "character_injection_policy": "FULL_SYNC",
+      "reference_weight": 0.75
+    },
+    "locked_prompt": {
+      "camera_prefix": "Candid mirror selfie shot on an iPhone rear camera, half-body to three-quarter reflection shot, holding a smartphone in one hand clearly visible in the reflection, casual off-center composition.",
+      "realism_suffix": "Subtle water spots, faint smudges and dust on mirror glass, realistic overhead indoor fluorescent or hallway lighting, slight ISO sensor grain, raw unedited mobile photo, zero studio lighting."
+    },
+    "slots_schema": {
+      "primary_subject": {
+        "required": true,
+        "allowed_types": [
+          "character"
+        ],
+        "instruction": "描述站姿、握持手机的手势（如手机置于胸前、或微微遮挡下半张脸）及视线方向（低头看手机屏幕或看镜中镜头）"
+      },
+      "secondary_subject": {
+        "required": false,
+        "allowed_types": [
+          "object_bound",
+          "object_unbound"
+        ],
+        "instruction": "可选，描述镜前或脚边的关联物（如脚边的宠物、拎着的购物袋）"
+      },
+      "environment_context": {
+        "required": true,
+        "instruction": "描述镜子边框特征及身后的真实生活背景（如带有洗手台杂物的浴室、狭小的电梯轿厢、试衣间帘子）"
+      }
+    }
+  },
+  {
+    "template_id": "SHOT_3RD_HALF",
+    "name": "友人视角后置半身抓拍",
+    "description": "默认同行友人或路人用手机后置镜头拍摄的腰部以上半身照，强调非摆拍的日常瞬间。",
+    "api_params": {
+      "aspect_ratio": "3:4",
+      "primary_subject_requirement": "character_only",
+      "character_injection_policy": "FULL_SYNC",
+      "reference_weight": 0.78
+    },
+    "locked_prompt": {
+      "camera_prefix": "Candid third-person snapshot taken on an iPhone rear camera, natural 26mm to 52mm focal length, eye-level perspective from across the table or nearby, waist-up half-body framing.",
+      "realism_suffix": "Unposed natural moment, subject caught mid-action, subtle smartphone portrait mode depth of field, mixed ambient restaurant or street lighting, natural skin tones, raw unretouched photo."
+    },
+    "slots_schema": {
+      "primary_subject": {
+        "required": true,
+        "allowed_types": [
+          "character"
+        ],
+        "instruction": "描述角色正在进行的自然动作与神态（如低头看菜单、用吸管喝饮料、侧头看向窗外）"
+      },
+      "secondary_subject": {
+        "required": false,
+        "allowed_types": [
+          "object_bound",
+          "object_unbound"
+        ],
+        "instruction": "可选，描述角色面前或手中的互动物件（如摊开的笔记本电脑、餐盘里的食物）"
+      },
+      "environment_context": {
+        "required": true,
+        "instruction": "描述所处室内外场所的桌椅细节、背景虚化人群及环境光照"
+      }
+    }
+  },
+  {
+    "template_id": "SHOT_3RD_FULL",
+    "name": "友人视角后置全身抓拍",
+    "description": "保留较大环境纵深的后置全身抓拍，人物从头到脚完整入镜。",
+    "api_params": {
+      "aspect_ratio": "9:16",
+      "primary_subject_requirement": "character_only",
+      "character_injection_policy": "FULL_SYNC",
+      "reference_weight": 0.72
+    },
+    "locked_prompt": {
+      "camera_prefix": "Full-body candid street snapshot taken on an iPhone rear camera, 26mm wide lens, eye-level standing perspective, full figure from head to shoes visible within realistic environmental depth.",
+      "realism_suffix": "Authentic everyday travel or street snapshot, natural daylight or city night neon ambient light, realistic ground shadows, slight smartphone HDR processing, unedited raw photo."
+    },
+    "slots_schema": {
+      "primary_subject": {
+        "required": true,
+        "allowed_types": [
+          "character"
+        ],
+        "instruction": "描述全身动态姿势（如迈步向前走回头看、靠在栏杆上插兜站立）及完整穿搭细节"
+      },
+      "secondary_subject": {
+        "required": false,
+        "allowed_types": [
+          "object_bound",
+          "object_unbound"
+        ],
+        "instruction": "可选，描述身旁的大型伴随物体（如牵着的狗、停在身后的自行车、手推行李箱）"
+      },
+      "environment_context": {
+        "required": true,
+        "instruction": "描述街道、建筑、公园或景区背景纵深及天气光线状态"
+      }
+    }
+  },
+  {
+    "template_id": "SHOT_POV_SUBJECT",
+    "name": "第一人称主观视角拍物",
+    "description": "模拟角色手持手机低头俯拍或平视拍摄眼前物品、宠物或方向盘的主观视角。",
+    "api_params": {
+      "aspect_ratio": "4:3",
+      "primary_subject_requirement": "object_bound_or_unbound",
+      "character_injection_policy": "PARTIAL_LIMB_ONLY",
+      "reference_weight": 0.85
+    },
+    "locked_prompt": {
+      "camera_prefix": "First-person POV snapshot taken on an iPhone rear camera, 45-degree downward angle or natural eye-level close-up, casual handheld framing.",
+      "realism_suffix": "Natural ambient shadows, realistic surface micro-textures, slightly imperfect smartphone focus, everyday authentic documentary snapshot, raw mobile camera color science, unedited."
+    },
+    "slots_schema": {
+      "primary_subject": {
+        "required": true,
+        "allowed_types": [
+          "object_bound",
+          "object_unbound"
+        ],
+        "instruction": "描述画面核心拍摄的物体或宠物状态（如蜷缩在毛毯上睡觉的橘猫、吃到一半的拉面碗、握着方向盘的视角）"
+      },
+      "secondary_subject": {
+        "required": false,
+        "allowed_types": [
+          "character"
+        ],
+        "framing_mode": "partial_limb_only",
+        "instruction": "可选，仅描述画面边缘露出的角色手部动作、袖口或俯拍鞋尖（严禁出现人脸描述）"
+      },
+      "environment_context": {
+        "required": true,
+        "instruction": "描述物体所在的接触面材质（如木质餐桌、床单、汽车中控台）及局部环境光"
+      }
+    }
+  },
+  {
+    "template_id": "SHOT_WIDE_SCENE",
+    "name": "随手拍环境与风景空镜",
+    "description": "纯环境、天气、建筑或交通状况的随手记录，人物完全不入镜。",
+    "api_params": {
+      "aspect_ratio": "4:3",
+      "primary_subject_requirement": "object_bound_or_unbound",
+      "character_injection_policy": "NONE",
+      "reference_weight": 0.8
+    },
+    "locked_prompt": {
+      "camera_prefix": "Casual handheld smartphone photo of scenery, iPhone rear camera 26mm wide shot, authentic unedited street or window view.",
+      "realism_suffix": "Realistic smartphone HDR dynamic range, natural weather lighting, slight lens flare or glass window reflection if indoors, everyday documentary feel, zero post-processing."
+    },
+    "slots_schema": {
+      "primary_subject": {
+        "required": true,
+        "allowed_types": [
+          "object_bound",
+          "object_unbound"
+        ],
+        "instruction": "描述核心景物、天气现象或特定建筑地标（如暴雨中的十字路口尾灯、晚霞下的写字楼天际线）"
+      },
+      "secondary_subject": {
+        "required": false,
+        "allowed_types": [
+          "object_unbound"
+        ],
+        "instruction": "可选，描述前景物理遮挡物以增强现场代入感（如带雨滴的车前挡风玻璃与雨刮器、阳台铁艺栏杆）"
+      },
+      "environment_context": {
+        "required": true,
+        "instruction": "描述时间段、天空色调、能见度及整体氛围"
+      }
+    }
+  }
+]

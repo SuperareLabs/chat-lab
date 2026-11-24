@@ -1,0 +1,304 @@
+[
+  {
+    "template_id": "VID_SELFIE_TALK",
+    "name": "前置摄像头近景自拍视频",
+    "paired_image_template": "SHOT_SELFIE_CLOSE",
+    "description": "单手举起手机前置摄像头拍摄的近景视频，强调眼神交流、微表情变化与近场呼吸感。",
+    "pika_params": {
+      "model": "pika-h3-flex",
+      "default_duration": 4,
+      "aspect_ratio": "9:16",
+      "resolution": "480p",
+      "sfx_enabled": true,
+      "motion_strength": 0.55
+    },
+    "vocal_policy": {
+      "vocal_mode": "ON_CAMERA_LIPSYNC",
+      "allow_spoken_line": true,
+      "lipsync_prompt_injection": "speaking naturally to the camera with subtle lip movement and expressive eyes"
+    },
+    "subject_policy": {
+      "primary_requirement": "character_only",
+      "character_injection": "FULL_SYNC"
+    },
+    "locked_prompt": {
+      "camera_prefix": "Handheld front-facing iPhone selfie video, close-up head and shoulders framing, subtle natural arm sway and breathing micro-jitter.",
+      "temporal_rules": "Natural blinking, subtle head tilt, hair reacting gently to air movement, unscripted candid presence.",
+      "sfx_foley_base": "Close-up smartphone mic audio, subtle breathing, quiet indoor room tone, no background music.",
+      "realism_suffix": "Raw unedited mobile clip, natural ambient lighting, authentic skin texture."
+    },
+    "agent_slots": {
+      "primary_subject": {
+        "required": true,
+        "allowed_types": [
+          "character"
+        ],
+        "instruction": "绑定角色 asset_id，描述单一连续微表情或手势（如单手托腮叹气、挑眉微笑），不超过10个英文单词"
+      },
+      "secondary_subject": {
+        "required": false,
+        "allowed_types": [
+          "object_bound",
+          "object_unbound"
+        ],
+        "instruction": "可选，靠近脸旁手持的小物件（如咖啡杯、冰袋）"
+      },
+      "environment_and_sound": {
+        "required": true,
+        "instruction": "描述身后局部背景光线微动及具体环境底噪（如办公室空调低鸣、卧室台灯暖光），不超过12个英文单词"
+      }
+    }
+  },
+  {
+    "template_id": "VID_MIRROR_OOTD",
+    "name": "镜面及反光介质动态自拍",
+    "paired_image_template": "SHOT_SELFIE_MIRROR",
+    "description": "对着镜子或玻璃橱窗拍摄的半身/全身短视频，手机清晰入镜，伴随轻微侧身或整理衣角动作。",
+    "pika_params": {
+      "model": "pika-h3-flex",
+      "default_duration": 4,
+      "aspect_ratio": "9:16",
+      "resolution": "480p",
+      "sfx_enabled": true,
+      "motion_strength": 0.6
+    },
+    "vocal_policy": {
+      "vocal_mode": "OFF_CAMERA_VO",
+      "allow_spoken_line": true,
+      "lipsync_prompt_injection": ""
+    },
+    "subject_policy": {
+      "primary_requirement": "character_only",
+      "character_injection": "FULL_SYNC"
+    },
+    "locked_prompt": {
+      "camera_prefix": "Handheld iPhone mirror selfie video, half-body reflection shot, holding a smartphone clearly visible in hand, subtle natural hand sway.",
+      "temporal_rules": "Natural fabric folding and draping with movement, soft ambient light shifting slightly across the room.",
+      "sfx_foley_base": "Quiet indoor room tone, soft clothing fabric rustling sound, subtle footsteps, no background music.",
+      "realism_suffix": "Raw unedited mobile clip, realistic indoor lighting, authentic everyday footage."
+    },
+    "agent_slots": {
+      "primary_subject": {
+        "required": true,
+        "allowed_types": [
+          "character"
+        ],
+        "instruction": "绑定角色 asset_id，描述对镜微动姿势（如低头看手机屏幕并单手整理衣领、轻微侧身展示穿搭），不超过12个英文单词"
+      },
+      "secondary_subject": {
+        "required": false,
+        "allowed_types": [
+          "object_bound",
+          "object_unbound"
+        ],
+        "instruction": "可选，镜前或脚边的关联物（如脚边的宠物、拎着的包）"
+      },
+      "environment_and_sound": {
+        "required": true,
+        "instruction": "描述镜面所处的真实室内环境（如玄关走廊、健身房器械区、电梯间）及环境微声，不超过12个英文单词"
+      }
+    }
+  },
+  {
+    "template_id": "VID_3RD_CANDID",
+    "name": "友人视角后置生活流抓拍",
+    "paired_image_template": "SHOT_3RD_HALF",
+    "description": "友人用手机后置镜头拍摄的半身或全身生活抓拍视频，人物处于连贯日常互动状态中。",
+    "pika_params": {
+      "model": "pika-h3-flex",
+      "default_duration": 5,
+      "aspect_ratio": "9:16",
+      "resolution": "480p",
+      "sfx_enabled": true,
+      "motion_strength": 0.65
+    },
+    "vocal_policy": {
+      "vocal_mode": "OFF_CAMERA_VO",
+      "allow_spoken_line": true,
+      "lipsync_prompt_injection": ""
+    },
+    "subject_policy": {
+      "primary_requirement": "character_only",
+      "character_injection": "FULL_SYNC"
+    },
+    "locked_prompt": {
+      "camera_prefix": "Candid third-person video shot on an iPhone rear camera, natural 26mm focal length, subtle handheld operator breathing movement.",
+      "temporal_rules": "Unposed natural movement, background pedestrians or foliage swaying gently, natural depth of field.",
+      "sfx_foley_base": "Authentic ambient environmental audio, distant soft chatter, tableware clinking or street murmur, no background music.",
+      "realism_suffix": "Raw unedited mobile footage, mixed ambient lighting, natural color science."
+    },
+    "agent_slots": {
+      "primary_subject": {
+        "required": true,
+        "allowed_types": [
+          "character"
+        ],
+        "instruction": "绑定角色 asset_id，描述角色正在进行的连贯生活动作（如低头搅拌咖啡后抬头看窗外、夹起食物），不超过12个英文单词"
+      },
+      "secondary_subject": {
+        "required": false,
+        "allowed_types": [
+          "object_bound",
+          "object_unbound"
+        ],
+        "instruction": "可选，角色面前或手中的互动物件（如笔记本电脑、餐盘、宠物）"
+      },
+      "environment_and_sound": {
+        "required": true,
+        "instruction": "描述所在餐厅、街道或公园背景动态及对应的真实环境音，不超过12个英文单词"
+      }
+    }
+  },
+  {
+    "template_id": "VID_POV_INTERACT",
+    "name": "第一人称主观视角拍物交互",
+    "paired_image_template": "SHOT_POV_SUBJECT",
+    "description": "模拟角色低头俯拍或平视拍摄眼前物品、宠物或食物的 3 秒短视频，角色仅以局部手部入画。",
+    "pika_params": {
+      "model": "pika-h3-flex",
+      "default_duration": 3,
+      "aspect_ratio": "9:16",
+      "resolution": "480p",
+      "sfx_enabled": true,
+      "motion_strength": 0.65
+    },
+    "vocal_policy": {
+      "vocal_mode": "OFF_CAMERA_VO",
+      "allow_spoken_line": true,
+      "lipsync_prompt_injection": ""
+    },
+    "subject_policy": {
+      "primary_requirement": "object_bound_or_unbound",
+      "character_injection": "PARTIAL_LIMB_ONLY"
+    },
+    "locked_prompt": {
+      "camera_prefix": "First-person POV iPhone rear camera video, 45-degree downward close-up angle, subtle handheld breathing micro-jitter, natural autofocus pull.",
+      "temporal_rules": "Single continuous micro-interaction, realistic shadows and surface reflections, subtle ambient light shift.",
+      "sfx_foley_base": "Close-up smartphone mic audio, crisp tactile foley sound, quiet indoor room tone, zero background music.",
+      "realism_suffix": "Raw unedited mobile clip, natural lighting, authentic everyday snapshot."
+    },
+    "agent_slots": {
+      "primary_subject": {
+        "required": true,
+        "allowed_types": [
+          "object_bound",
+          "object_unbound"
+        ],
+        "instruction": "主体物件或宠物及它的微动态（如热气腾腾的拉面、蜷缩打呼噜的橘猫、杯中旋转的冰块），不超过10个英文单词"
+      },
+      "secondary_subject": {
+        "required": false,
+        "allowed_types": [
+          "character"
+        ],
+        "forced_framing": "partial_limb_only",
+        "instruction": "可选，仅描述画面边缘露出的角色手部动作与袖口颜色（严禁出现人脸描述），不超过10个英文单词"
+      },
+      "environment_and_sound": {
+        "required": true,
+        "instruction": "描述桌面/地面材质及具体的近景发声介质（如冰块碰撞塑料杯、纸张翻动声、猫咪呼噜声），不超过12个英文单词"
+      }
+    }
+  },
+  {
+    "template_id": "VID_ACTION_WALK",
+    "name": "手持边走边拍动态 Vlog",
+    "paired_image_template": "SHOT_SELFIE_CLOSE",
+    "description": "角色边走边手持拍摄的 6 秒动态视频，具备真实的脚步上下起伏节奏与户外风噪。",
+    "pika_params": {
+      "model": "pika-h3-flex",
+      "default_duration": 6,
+      "aspect_ratio": "9:16",
+      "resolution": "480p",
+      "sfx_enabled": true,
+      "motion_strength": 0.75
+    },
+    "vocal_policy": {
+      "vocal_mode": "ON_CAMERA_LIPSYNC",
+      "allow_spoken_line": true,
+      "lipsync_prompt_injection": "speaking casually to the camera while walking, natural mouth movement"
+    },
+    "subject_policy": {
+      "primary_requirement": "character_or_object",
+      "character_injection": "FULL_SYNC"
+    },
+    "locked_prompt": {
+      "camera_prefix": "Raw handheld iPhone selfie video while walking, 24mm wide-angle lens, rhythmic walking camera bob and natural handheld motion.",
+      "temporal_rules": "Continuous forward walking movement, background scenery passing steadily, hair and clothes reacting to breeze, natural blinking.",
+      "sfx_foley_base": "Outdoor smartphone mic audio, subtle wind buffeting on mic, rhythmic footsteps on pavement, distant city traffic noise, no background music.",
+      "realism_suffix": "Raw unedited mobile footage, natural daylight or streetlamp dynamic range, authentic social media clip."
+    },
+    "agent_slots": {
+      "primary_subject": {
+        "required": true,
+        "allowed_types": [
+          "character",
+          "object_unbound"
+        ],
+        "instruction": "若为角色自拍则填 asset_id 并描述走路神态（如迎风微眯眼微笑）；若为第一人称走路空镜则描述前方路面，不超过12个英文单词"
+      },
+      "secondary_subject": {
+        "required": false,
+        "allowed_types": [
+          "object_bound",
+          "object_unbound"
+        ],
+        "instruction": "可选，手里拎着的袋子、咖啡杯或身旁同行的宠物"
+      },
+      "environment_and_sound": {
+        "required": true,
+        "instruction": "描述身后掠过的街道建筑、树影、灯光时间段及脚步/风声细节，不超过12个英文单词"
+      }
+    }
+  },
+  {
+    "template_id": "VID_AMBIENT_LOOP",
+    "name": "随手拍纯环境氛围空镜视频",
+    "paired_image_template": "SHOT_WIDE_SCENE",
+    "description": "人物完全不入镜的 5 秒环境记录短视频，以微弱手持感捕捉天气、交通或光影流动。",
+    "pika_params": {
+      "model": "pika-h3-flex",
+      "default_duration": 5,
+      "aspect_ratio": "9:16",
+      "resolution": "480p",
+      "sfx_enabled": true,
+      "motion_strength": 0.5
+    },
+    "vocal_policy": {
+      "vocal_mode": "DISABLED",
+      "allow_spoken_line": false,
+      "lipsync_prompt_injection": ""
+    },
+    "subject_policy": {
+      "primary_requirement": "object_bound_or_unbound",
+      "character_injection": "NONE"
+    },
+    "locked_prompt": {
+      "camera_prefix": "Casual handheld iPhone rear camera video of scenery, wide-angle shot, very subtle natural hand tremor.",
+      "temporal_rules": "Smooth natural environmental motion such as raindrops sliding, tree leaves swaying, or distant traffic lights moving.",
+      "sfx_foley_base": "Pure authentic outdoor or window-side environmental audio, rain, wind, or distant city hum, zero speech, no music.",
+      "realism_suffix": "Raw unedited mobile video, natural weather lighting, authentic documentary snapshot."
+    },
+    "agent_slots": {
+      "primary_subject": {
+        "required": true,
+        "allowed_types": [
+          "object_bound",
+          "object_unbound"
+        ],
+        "instruction": "描述核心动态景物或天气现象（如暴雨中的十字路口尾灯、晚霞下的城市天际线），不超过12个英文单词"
+      },
+      "secondary_subject": {
+        "required": false,
+        "allowed_types": [
+          "object_unbound"
+        ],
+        "instruction": "可选，前景物理遮挡物（如布满雨滴的车前挡风玻璃、阳台铁艺栏杆）"
+      },
+      "environment_and_sound": {
+        "required": true,
+        "instruction": "描述整体时间光照氛围及纯粹自然环境声（如雨滴敲打玻璃声、深夜微风声），不超过12个英文单词"
+      }
+    }
+  }
+]
