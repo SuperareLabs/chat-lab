@@ -203,6 +203,55 @@ button, select, input, textarea, summary { -webkit-tap-highlight-color: transpar
 .message-typing span:nth-child(2) { animation-delay: 120ms; }
 .message-typing span:nth-child(3) { animation-delay: 240ms; }
 
+.mentor-recommendation {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 10px 12px;
+  width: min(330px, 100%);
+  max-width: 100%;
+  margin-top: 5px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.mentor-recommendation-avatar { width: 40px; height: 40px; border-radius: 10px; background: var(--accent-soft); object-fit: cover; }
+.mentor-recommendation-details { align-self: center; min-width: 0; }
+.mentor-recommendation-label { color: var(--accent); font-size: 11px; font-weight: 650; }
+.mentor-recommendation-details strong { font-size: 15px; }
+.mentor-recommendation-details p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.mentor-recommendation-action { grid-column: 2; justify-self: start; }
+
+.mentor-arrival {
+  display: grid;
+  flex: none;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: start;
+  gap: 11px;
+  margin: 12px 24px 0;
+  padding: 10px 13px;
+  border: 1px solid #cbdaba;
+  border-inline-start: 4px solid #55764a;
+  border-radius: 12px;
+  background: #edf4e6;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.mentor-arrival-check {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #42643a;
+  color: white;
+  font-size: 15px;
+}
+.mentor-arrival strong { font-size: 15px; }
+.mentor-arrival p { margin: 2px 0 0; font-size: 13px; }
+.mentor-arrival-specialty { color: var(--muted); }
+
 @keyframes message-arrive {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
@@ -515,6 +564,7 @@ body:has(.agent-editor[open]) { overflow: hidden; }
   .panel-shortcuts { gap: 4px; margin-left: 7px; }
   .panel-shortcuts .icon-button { width: 44px; height: 44px; border-color: transparent; background: transparent; }
   .messages { padding: 21px 14px; }
+  .mentor-arrival { margin-inline: 14px; }
   .message-row { gap: 8px; margin-bottom: 21px; }
   .message-avatar { width: 27px; height: 27px; }
   .message-bubble { padding: 10px 12px; font-size: 14px; }

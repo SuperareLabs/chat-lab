@@ -163,6 +163,9 @@ export function createLabServer(options = {}) {
   const defaultAgents = browserMode ? config.defaultAgents ?? defaults.agents : [];
   const retiredAgentIds = new Set(config.retiredAgentIds ?? defaults.retiredAgentIds ?? []);
   const sharedPrompts = browserMode ? config.sharedPrompts ?? loadSharedPrompts() : [];
+  const demoArchitecture = config.describeArchitecture?.({
+    model: config.model.name, agents: defaultAgents, children: config.defaultChildren, sharedPrompts, search: config.search,
+  });
   const browserWorkspace = browserMode ? createBrowserWorkspace({ ...config, appVersion: APP_VERSION,
     catalog, defaultAgents, retiredAgentIds: [...retiredAgentIds], sharedPrompts,
     defaultChildren: config.defaultChildren ?? [{ name: '访客', age: 22, interests: [] }],
@@ -176,8 +179,8 @@ export function createLabServer(options = {}) {
     const method = request.method;
     const secure = origin.startsWith('https:');
     if (method === 'GET' && pathname === '/api/auth/session') {
-      return sendJson(response, 200, gate ? gate.status(request)
-        : { authenticated: true, passwordRequired: false, storageMode: config.storageMode });
+      const session = gate ? gate.status(request) : { authenticated: true, passwordRequired: false, storageMode: config.storageMode };
+      return sendJson(response, 200, demoArchitecture ? { ...session, architectureAvailable: true } : session);
     }
     if (gate && pathname === '/api/auth/login' && method === 'POST') {
       const login = await gate.login(request, await jsonBody(request), { secure });
@@ -190,6 +193,9 @@ export function createLabServer(options = {}) {
     if (browserMode && pathname.startsWith('/api/')) {
       gate?.require(request);
       if (!accepting) throw problem('服务正在重启，请稍后再试', 503);
+      if (demoArchitecture && pathname === '/api/demo/architecture' && method === 'GET') {
+        return sendJson(response, 200, demoArchitecture);
+      }
       const ownerKey = request.headers['x-chat-lab-owner'];
       if (pathname === '/api/catalog' && method === 'GET') {
         if ([...searchParams.keys()].some(key => key !== 'revision') || searchParams.getAll('revision').length > 1) {

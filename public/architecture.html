@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f3f1eb">
+  <title>聊天架构 · ChatLab</title>
+  <link rel="stylesheet" href="/architecture.css">
+  <script type="module" src="/architecture.js"></script>
+</head>
+<body>
+  <main class="architecture">
+    <header class="page-header">
+      <a class="back-link" href="/"><span aria-hidden="true">←</span> 返回聊天</a>
+      <div class="page-title">
+        <h1>聊天架构</h1>
+        <p>选择画布上的节点，查看执行步骤和实际提示词。</p>
+      </div>
+      <dl class="runtime-facts" id="architecture-runtime" hidden>
+        <div><dt>架构基线</dt><dd id="architecture-base"></dd></div>
+        <div><dt>主模型</dt><dd id="architecture-model"></dd></div>
+      </dl>
+    </header>
+
+    <div class="load-panel" id="architecture-loading" role="status">正在加载架构…</div>
+    <div class="load-panel" id="architecture-error" hidden>
+      <p id="architecture-error-message" role="alert"></p>
+      <button class="minor-button" id="architecture-retry" type="button">重试</button>
+    </div>
+    <noscript><p class="load-panel">启用 JavaScript 后可查看交互架构。</p></noscript>
+
+    <div class="explorer" id="architecture-explorer" hidden>
+      <section class="flow-panel" id="architecture-flow" aria-labelledby="flow-title">
+        <header class="flow-header">
+          <h2 id="flow-title">对话流程</h2>
+          <div class="graph-controls" role="group" aria-label="画布缩放">
+            <button id="graph-zoom-out" class="graph-control" type="button" aria-label="缩小画布">−</button>
+            <output id="graph-zoom-level" aria-label="画布缩放比例">100%</output>
+            <button id="graph-zoom-in" class="graph-control" type="button" aria-label="放大画布">+</button>
+            <button id="graph-fit" class="graph-control graph-fit" type="button">适应画布</button>
+          </div>
+        </header>
+        <div class="graph-viewport" id="graph-viewport">
+          <canvas id="graph-canvas" aria-hidden="true"></canvas>
+          <ol class="graph-world" id="flow-nodes" aria-label="架构节点"></ol>
+        </div>
+        <footer class="graph-footer">
+          <ul class="graph-legend" aria-label="连线图例">
+            <li><i class="line-key main" aria-hidden="true"></i>对话主线</li>
+            <li><i class="line-key tool" aria-hidden="true"></i>导师判定</li>
+            <li><i class="line-key action" aria-hidden="true"></i>点击进入</li>
+            <li><i class="line-key background" aria-hidden="true"></i>后台任务</li>
+          </ul>
+          <p class="graph-hint">拖动空白处平移，Ctrl / ⌘ + 滚轮缩放</p>
+        </footer>
+      </section>
+
+      <section class="inspector" id="architecture-inspector" aria-labelledby="module-title" tabindex="-1">
+        <header class="inspector-header">
+          <div>
+            <h2 id="module-title"></h2>
+            <p id="module-description"></p>
+          </div>
+          <a class="flow-return" href="#architecture-flow">查看流程 <span aria-hidden="true">↑</span></a>
+        </header>
+        <ol class="steps" id="module-steps"></ol>
+      </section>
+    </div>
+    <div class="visually-hidden" id="copy-status" role="status"></div>
+  </main>
+</body>
+</html>
