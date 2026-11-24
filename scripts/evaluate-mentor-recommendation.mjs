@@ -407,7 +407,9 @@ function readDecision(response) {
 
 function modelCallKind(input) {
   const system = input.messages?.[0]?.content;
-  return typeof system === 'string' && system.startsWith('【导师工具内部判定】') ? 'mentor-decision' : 'chat';
+  if (system?.startsWith('【导师工具内部判定】')) return 'mentor-decision';
+  if (system?.startsWith('【导师推荐记录判断】')) return 'mentor-history-review';
+  return 'chat';
 }
 
 function observationFrom(result, events, requestId) {
@@ -530,7 +532,7 @@ async function rescoreReports(paths, available) {
 function printRunSummary(runs, output) {
   const passed = runs.filter(run => run.passed).length;
   const modelCalls = runs.flatMap(run => run.turns.flatMap(item => item.modelCalls));
-  const nestedCalls = modelCalls.filter(call => call.kind === 'mentor-decision').length;
+  const nestedCalls = modelCalls.filter(call => call.kind === 'mentor-decision' || call.kind === 'mentor-history-review').length;
   console.log(`通过 ${passed}/${runs.length}，主模型 ${modelCalls.length - nestedCalls} 次，导师工具内部模型 ${nestedCalls} 次。报告 ${output}`);
   if (passed !== runs.length) process.exitCode = 1;
 }

@@ -560,9 +560,11 @@ function usageMetricDetails(usage) {
       rows: [['合计', totalFee], ['聊天模型', observed ? usageComponentCost(usage, 'chat') : '—'],
         ['搜索模型', observed ? usageComponentCost(usage, 'search') : '—'], ['记忆模型', observed ? usageComponentCost(usage, 'memory') : '—'],
         ...(usage?.calls?.some(call => call.kind === 'mentor_trigger')
-          ? [['导师工具触发判断', usageComponentCost(usage, 'mentor_trigger')]] : []),
+          ? [['语义工具触发判断', usageComponentCost(usage, 'mentor_trigger')]] : []),
         ...(usage?.calls?.some(call => call.kind === 'mentor_decision')
           ? [['导师推荐判定', usageComponentCost(usage, 'mentor_decision')]] : []),
+        ...(usage?.calls?.some(call => call.kind === 'mentor_history_review')
+          ? [['导师推荐记录复核', usageComponentCost(usage, 'mentor_history_review')]] : []),
         ...(usage?.calls?.some(call => call.kind === 'context_brief')
           ? [['历史概括整理', usageComponentCost(usage, 'context_brief')]] : []),
         ['联网等插件', pluginFee]],

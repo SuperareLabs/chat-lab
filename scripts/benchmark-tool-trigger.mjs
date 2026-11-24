@@ -3,7 +3,7 @@ import { rename, writeFile } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { demoAgents } from '../config/mentor-demo.mjs';
 import { readCredentialFile, readOpenRouterCredential } from '../lib/config.mjs';
-import { buildToolTriggerRequest, createToolDecisionClient, MENTOR_TRIGGER_ACTIONS, MENTOR_TRIGGER_RULE,
+import { buildToolTriggerRequest, createToolDecisionClient, MENTOR_TRIGGER_ACTIONS, MENTOR_TRIGGER_RULE, SEARCH_TRIGGER_RULE,
   TOOL_DECISION_PROVIDERS as providers, TOOL_TRIGGER_INSTRUCTIONS, TOOL_TRIGGER_RULE_VERSION,
   TOOL_TRIGGER_UNCERTAIN } from '../lib/tool-trigger.mjs';
 import { benchmarkCases } from './tool-trigger-benchmark/cases.mjs';
@@ -22,11 +22,7 @@ const toolRules = {
     call: '回答所需的用户过往偏好、事实、约定或进展来自之前的交流，而且当前提供的对话里找不到。',
     skip: '当前对话已经包含答案，或者孩子在分享新事实、询问常识，或在说故事人物如何回忆。',
   },
-  search_web: {
-    label: '搜索网页',
-    call: '孩子明确要求联网查找公开资料，或者答案依赖实时、近期、具体日期地点或需要外部核验的公开信息，当前对话没有可靠依据。',
-    skip: '常识、原创写作或当前对话已有依据的内容。孩子明确说不用上网也跳过。',
-  },
+  search_web: SEARCH_TRIGGER_RULE,
 };
 
 const timeoutMs = 12_000;

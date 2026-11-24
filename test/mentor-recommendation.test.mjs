@@ -43,17 +43,19 @@ const triggerUsageFor = turn => turn.snapshot.tables.usage_records
   .filter(row => row.run_id === turn.run.id && row.kind === 'mentor_trigger')
   .map(row => JSON.parse(row.entry));
 
-async function demo({ agents = demoAgents } = {}) {
+async function demo({ agents = demoAgents, search, clock } = {}) {
   let turn;
   const workspace = createBrowserWorkspace({
     defaultAgents: agents, defaultChildren: demoChildren, sharedPrompts: loadSharedPrompts(),
-    model: { name: 'test', configured: true }, memoryModel: { configured: false },
+    model: { name: 'test', configured: true }, memoryModel: { configured: false }, search, clock,
     mentorTrigger: { model: 'test-trigger', async decide(input, { signal }) {
       assert.equal(signal.aborted, false);
       turn.triggerRequests.push(input);
       if (turn.trigger instanceof Error) throw turn.trigger;
       const choice = typeof turn.trigger === 'function' ? turn.trigger(input) : turn.trigger;
-      return { decisions: { find_mentor: { choice, reason: turn.triggerReason } },
+      const decisions = { find_mentor: { choice, reason: turn.triggerReason } };
+      if (input.questions.search_web) decisions.search_web = { choice: turn.searchChoice };
+      return { decisions,
         receipt: { model: 'test-trigger', usage: { input_tokens: 100, output_tokens: 0 } } };
     } },
     provider: { async chat({ messages, tools, toolChoice }) {
@@ -62,6 +64,13 @@ async function demo({ agents = demoAgents } = {}) {
         turn.classifications.push({ system: messages[0].content, input, tools });
         if (turn.decision instanceof Error) throw turn.decision;
         const result = typeof turn.decision === 'function' ? turn.decision(input) : turn.decision;
+        return response(typeof result === 'string' ? result : JSON.stringify(result));
+      }
+      if (messages[0].content.startsWith('【导师推荐记录判断】')) {
+        const input = JSON.parse(messages.at(-1).content);
+        turn.historyReviews.push({ input, tools });
+        if (turn.historyReview instanceof Error) throw turn.historyReview;
+        const result = typeof turn.historyReview === 'function' ? turn.historyReview(input) : turn.historyReview;
         return response(typeof result === 'string' ? result : JSON.stringify(result));
       }
       const last = messages.at(-1);
@@ -86,10 +95,11 @@ async function demo({ agents = demoAgents } = {}) {
   return {
     async send(text, options = {}) {
       const { agentId = currentMentor.id, reply = naturalAnswer, nativeTool, failContinuation = false,
-        trigger = 'call', triggerReason = 'mentor_intent', requestId = crypto.randomUUID() } = options;
+        trigger = 'call', triggerReason = 'mentor_intent', searchChoice = 'skip', requestId = crypto.randomUUID() } = options;
       const scope = { childId, agentId };
-      turn = { reply, nativeTool, failContinuation, trigger, triggerReason, decision: options.decision ?? decision('stay'),
-        events: [], triggerRequests: [], outerRequests: [], classifications: [], receipts: [] };
+      turn = { reply, nativeTool, failContinuation, trigger, triggerReason, searchChoice, decision: options.decision ?? decision('stay'),
+        historyReview: options.historyReview ?? { decision: 'proceed', reason: '可以继续推荐。' },
+        events: [], triggerRequests: [], outerRequests: [], classifications: [], historyReviews: [], receipts: [] };
       const result = await workspace.execute({
         method: 'POST', path: '/api/chat', scope, snapshot,
         body: { ...scope, text, sessionId: sessions.get(agentId), requestId },
@@ -231,6 +241,36 @@ test('a main-model calculation keeps its own tool turn without repeating the men
   assert.deepEqual(offers(turn), []);
 });
 
+test('the same semantic check routes a mentor and forces the independently requested web search once', async () => {
+  const query = '自然博物馆 蝴蝶 如何观察 翅膀';
+  const result = { title: '蝴蝶观察入门', url: 'https://example.com/butterflies', snippet: '从一臂之外观察翅膀。' };
+  const queries = [];
+  const app = await demo({ search: { configured: true, async search({ query }) {
+    queries.push(query);
+    return { results: [result], metadata: { retrieved_at: '2026-11-24T04:00:00.000Z' } };
+  } } });
+  const text = '我想学怎么观察蝴蝶的翅膀，能给我找点自然博物馆的公开资料吗？';
+  const reply = '博物馆资料建议，从一臂之外观察蝴蝶的翅膀。';
+  const toolChoice = { type: 'function', function: { name: 'search_web' } };
+  const nativeTool = { id: 'search-1', type: 'function',
+    function: { name: 'search_web', arguments: JSON.stringify({ query }) } };
+  const turn = await app.send(text, { triggerReason: 'outside_specialty', searchChoice: 'call', nativeTool, reply,
+    decision: proactive(xiaolin, '观察蝴蝶的翅膀', 'nature-observation') });
+
+  assert.equal(turn.triggerRequests.length, 1);
+  assert.deepEqual(Object.keys(turn.triggerRequests[0].questions).sort(), ['find_mentor', 'search_web']);
+  assert.deepEqual(turn.outerRequests.map(request => request.toolChoice), [toolChoice, undefined]);
+  assert.deepEqual(turn.outerRequests.map(request => request.tools.some(tool => tool.function.name === 'search_web')), [true, false]);
+  assert.deepEqual(turn.context.modelRequests.map(request => request.toolChoice), [toolChoice, undefined]);
+  assert.equal(turn.context.mentorTrigger.searchChoice, 'call');
+  assert.deepEqual(turn.context.toolCalls.map(call => call.name), ['find_mentor', 'search_web']);
+  assert.deepEqual(queries, [query]);
+  assert.equal(turn.receipts[1].ok, true);
+  assert.deepEqual(turn.receipts[1].results, [result]);
+  assert.equal(parts(turn).at(-1), reply);
+  assert.deepEqual(offers(turn).map(event => event.mentor.id), [xiaolin.id]);
+});
+
 test('a routed request reaches the inner decision with prior conversation before the main reply', async () => {
   const app = await demo();
   const greeting = await app.send('hello', { trigger: 'skip', reply: '嗨，我在。' });
@@ -358,7 +398,7 @@ test('a completed proactive card is recorded after helpful text and its history 
   assert.deepEqual(offers(fresh).map(event => event.mentor.id), [duoluo.id]);
 });
 
-test('the model receives successful-turn counts and can decide when a new topic is ready for a card', async () => {
+test('the history reviewer receives successful-turn counts and can decide when a new topic is ready for a card', async () => {
   const app = await demo();
   const first = await app.send(englishPractice, { reply: '开口先说：May I have a juice?',
     decision: proactive(duoluo, '练习用英语在咖啡店点餐', 'english-speaking') });
@@ -372,10 +412,11 @@ test('the model receives successful-turn counts and can decide when a new topic 
   const sportsReply = '先轻轻蹬地试一次，看看身体有没有跟上。';
   const stayReason = '才刚推荐过一次，先让孩子试试。';
   const whenReady = ({ recommendationHistory }) => recommendationHistory[0].turnsSince < 2
-    ? decision('stay', { reason: stayReason }) : sports;
-  const early = await app.send(sportsPractice, { decision: whenReady, reply: sportsReply });
+    ? { decision: 'stay', reason: stayReason } : { decision: 'proceed', reason: '已经间隔两轮，孩子提出了新的学习目标。' };
+  const early = await app.send(sportsPractice, { decision: sports, historyReview: whenReady, reply: sportsReply });
   assert.equal(historyFor(early)[0].id, first.run.id);
   assert.equal(historyFor(early)[0].turnsSince, 1);
+  assert.deepEqual(early.historyReviews[0].input.recommendationHistory, historyFor(early));
   assert.equal(early.receipts[0].status, 'stay');
   assert.equal(early.receipts[0].reason, stayReason);
   assert.deepEqual(parts(early), [sportsReply]);
@@ -383,15 +424,20 @@ test('the model receives successful-turn counts and can decide when a new topic 
   assert.equal(early.context.mentorInvitation, undefined);
   assert.equal(recorded(early), null);
 
-  const ready = await app.send('我想接着练短跑起跑的动作，总觉得后脚慢半拍。', { decision: whenReady, reply: sportsReply });
+  const ready = await app.send('我想接着练短跑起跑的动作，总觉得后脚慢半拍。', {
+    decision: sports, historyReview: whenReady, reply: sportsReply,
+  });
   assert.equal(historyFor(ready)[0].turnsSince, 2);
+  assert.deepEqual(ready.historyReviews[0].input.recommendationHistory, historyFor(ready));
   assert.equal(ready.receipts[0].status, 'offer');
+  assert.equal(ready.context.toolCalls[0].result.historyReview.decision, 'proceed');
   assert.deepEqual(offers(ready).map(event => event.mentor.id), [shangang.id]);
 
   const requested = await app.send('那就帮我找山冈继续练起跑。', { decision: decision('offer', {
     mentorIds: [shangang.id], evidence: '帮我找山冈', basis: 'explicit_request', categoryId: 'sports-technique',
   }), reply: '山冈能陪你把预备姿势和第一步分开练。' });
   assert.deepEqual(historyFor(requested).map(({ id, turnsSince }) => [id, turnsSince]), [[ready.run.id, 0], [first.run.id, 3]]);
+  assert.deepEqual(requested.historyReviews, []);
   assert.equal(requested.receipts[0].status, 'offer');
   assert.equal(requested.offersBeforeContinuation, 1);
   assert.deepEqual(offers(requested).map(event => event.mentor.id), [shangang.id]);
@@ -434,7 +480,7 @@ test('the model can recognize the same project from the new question and an earl
   assert.equal(recorded(sameTask), null);
 });
 
-test('the backend preserves an offer from the model even with the same category and a recent card', async () => {
+test('the backend preserves an offer the reviewer approves even with the same category and a recent card', async () => {
   const app = await demo();
   const first = await app.send(englishPractice, { decision: proactive(duoluo, englishPractice, 'english-speaking') });
   const reply = '可以先说：Excuse me, where is the station?';
@@ -443,6 +489,8 @@ test('the backend preserves an offer from the model even with the same category 
     decision: proactive(duoluo, '模拟问路', 'english-speaking'),
   });
   assert.deepEqual(historyFor(turn), [{ id: first.run.id, turnsSince: 0, ...recorded(first) }]);
+  assert.equal(turn.historyReviews.length, 1);
+  assert.equal(turn.context.toolCalls[0].result.historyReview.decision, 'proceed');
   assert.equal(turn.receipts[0].status, 'offer');
   assert.equal(turn.offersBeforeContinuation, 0);
   assert.deepEqual(offers(turn).map(event => event.mentor.id), [duoluo.id]);
@@ -453,6 +501,71 @@ test('the backend preserves an offer from the model even with the same category 
     { id: turn.run.id, turnsSince: 0, ...recorded(turn) },
     { id: first.run.id, turnsSince: 1, ...recorded(first) },
   ]);
+});
+
+test('elapsed wall time leaves consecutive passive offers at zero turns and lets the reviewer keep the child in chat', async () => {
+  let now = Date.parse('2026-11-24T07:15:33.474Z');
+  const app = await demo({ clock: () => new Date(now) });
+  const firstText = '最近很火的一个数学猜想被证明了，那个东西是啥你帮我搜一下呢';
+  const first = await app.send(firstText, {
+    decision: proactive(pisili, '数学猜想', 'math-calculation', { reason: '皮斯理可以解释数学猜想。' }),
+    reply: '猜想是数学家提出、还需要证明的说法。',
+  });
+  assert.deepEqual(first.historyReviews, []);
+  assert.deepEqual(offers(first).map(event => event.mentor.id), [pisili.id]);
+
+  now += 181_000;
+  const text = '黎曼猜想这个东西是啥呢？你简单解释下吧';
+  const reply = '它关心的是素数出现的规律。';
+  const reason = '这是同一个数学猜想的追问，推荐之后还没有完成一个回合。';
+  const second = await app.send(text, {
+    decision: proactive(pisili, '黎曼猜想', 'math-calculation', { reason: '皮斯理可以解释黎曼猜想。' }),
+    historyReview: { decision: 'stay', reason, replyHint: reply }, reply,
+  });
+  assert.equal(second.sessionId, first.sessionId);
+  const [review] = second.historyReviews;
+  assert.equal(second.historyReviews.length, 1);
+  assert.deepEqual(review.tools, []);
+  assert.deepEqual(review.input.recommendationHistory, [{ id: first.run.id, turnsSince: 0, ...recorded(first) }]);
+  assert.deepEqual(review.input.latestUserMessages, [text]);
+  assert.ok(review.input.previousTurns.some(turn => turn.role === 'user' && turn.text === firstText));
+  assert.equal(review.input.candidate.categoryId, 'math-calculation');
+  assert.equal(review.input.candidate.status, 'offer');
+  assert.equal(review.input.candidate.mentor.name, pisili.name);
+  assert.equal(second.receipts[0].status, 'stay');
+  assert.equal(second.receipts[0].reason, reason);
+  assert.equal(second.receipts[0].replyHint, reply);
+  assert.deepEqual(second.context.toolCalls[0].result.historyReview, { decision: 'stay', reason });
+  assert.equal(Object.hasOwn(second.receipts[0], 'historyReview'), false);
+  const decisionCharges = second.snapshot.tables.usage_records.filter(row => row.run_id === second.run.id &&
+    ['mentor_decision', 'mentor_history_review'].includes(row.kind));
+  assert.deepEqual(decisionCharges.map(row => row.kind).sort(), ['mentor_decision', 'mentor_history_review']);
+  assert.deepEqual(offers(second), []);
+  assert.equal(recorded(second), null);
+  assert.deepEqual(parts(second), [reply]);
+});
+
+test('an unavailable history reviewer does not display or persist the unreviewed card', async t => {
+  for (const [name, historyReview] of [
+    ['request failure', new Error('synthetic history reviewer failure')],
+    ['malformed verdict', { decision: 'retry', reason: '格式错误。' }],
+  ]) {
+    await t.test(name, async () => {
+      const app = await demo();
+      const first = await app.send(englishPractice, { decision: proactive(duoluo, englishPractice, 'english-speaking') });
+      assert.equal(offers(first).length, 1);
+      const reply = '蹬稳以后再往前迈。';
+      const second = await app.send(sportsPractice, {
+        decision: proactive(shangang, sportsPractice, 'sports-technique'), historyReview, reply,
+      });
+      assert.equal(second.historyReviews.length, 1);
+      assert.equal(second.receipts[0].status, 'unavailable');
+      assert.equal(second.context.toolCalls[0].result.historyReview.decision, 'unavailable');
+      assert.deepEqual(offers(second), []);
+      assert.equal(recorded(second), null);
+      assert.deepEqual(parts(second), [reply]);
+    });
+  }
 });
 
 test('explicit requests by capability can offer a card after an unrelated refusal and during cooldown', async () => {
