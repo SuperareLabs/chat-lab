@@ -20,6 +20,7 @@ const state = {
   pendingMessages: [], pendingTimer: null,
   memorySignature: null, memoryOpen: new Set(), memoryDetails: new Map(), memoryData: null, memoryFilter: 'active', polling: false,
   sessionUsage: null, liveToolCalls: null,
+  mentorRecommendation: null,
   catalogRevision: null, catalogAvailable: false, catalogAgents: [],
 };
 const selectionKey = 'croco-lab-v1.selection';
@@ -211,8 +212,8 @@ function scoped(path, scope = selectedScope()) { return `${path}?${new URLSearch
 function hasScope() { return Boolean(state.agentId && state.childId); }
 function agent() { return state.agents.find(item => item.id === state.agentId); }
 function child() { return state.children.find(item => item.id === state.childId); }
-function audienceBlocked() {
-  const minimumAge = agent()?.minimumAge;
+function audienceBlocked(selected = agent()) {
+  const minimumAge = selected?.minimumAge;
   return Boolean(minimumAge && (!Number.isInteger(child()?.age) || child().age < minimumAge));
 }
 function imageForAgent(selected = agent()) {
@@ -308,6 +309,8 @@ function updateControls() {
   ui['chat-input'].disabled = !hasScope() || closed || blocked || state.busy || state.queueSaving;
   ui['chat-input'].placeholder = !state.agentId ? '先创建或选择角色' : !state.childId ? '先选择或创建用户' : blocked ? `此角色仅限${minimumAge}岁及以上，请切换或创建成年用户` : closed ? '此会话已结束，可开启新会话' : `给${agent()?.name || 'Agent'}发消息…`;
   ui['send-button'].disabled = locked || !hasScope() || closed || blocked || !ui['chat-input'].value.trim();
+  const recommendationButton = ui.messages.querySelector('.mentor-recommendation button');
+  if (recommendationButton) recommendationButton.disabled = scopeLocked || !availableMentor(state.mentorRecommendation?.mentor.id);
   syncAgentGalleryRoute();
 }
 
@@ -333,12 +336,68 @@ function messageBubble(text, animate = false) {
   return node('div', animate ? 'message-bubble is-arriving' : 'message-bubble', text);
 }
 
+function availableMentor(id) {
+  const target = state.agents.find(item => item.id === id && item.id !== state.agentId);
+  return target && !audienceBlocked(target) ? target : null;
+}
+
+function appendMentorRecommendation(stack, mentor) {
+  const target = availableMentor(mentor?.id);
+  if (!target) return false;
+  const name = mentor.name || target.name;
+  const card = node('section', 'mentor-recommendation');
+  card.setAttribute('aria-label', '推荐导师');
+  const avatar = node('img', 'mentor-recommendation-avatar');
+  avatar.alt = '';
+  avatar.src = mentor.avatarUrl || imageForAgent(target);
+  avatar.addEventListener('error', () => { avatar.src = fallbackAvatar; }, { once: true });
+  const details = node('div', 'mentor-recommendation-details');
+  details.append(node('div', 'mentor-recommendation-label', '推荐导师'), node('strong', '', name));
+  const description = mentor.description || target.description;
+  if (description) details.append(node('p', '', description));
+  const action = node('button', 'primary-button mentor-recommendation-action', '去聊聊');
+  action.type = 'button';
+  action.disabled = ui['agent-select'].disabled;
+  action.addEventListener('click', () => void selectAgent(target.id, mentor));
+  card.append(avatar, details, action);
+  stack.append(card);
+  return true;
+}
+
+function clearMentorRecommendation() {
+  state.mentorRecommendation = null;
+  ui.messages.querySelector('.mentor-recommendation')?.remove();
+}
+
+function clearMentorArrival() {
+  el('mentor-arrival')?.remove();
+}
+
+function showMentorArrival(source, target, mentor) {
+  clearMentorArrival();
+  const card = node('section', 'mentor-arrival');
+  card.id = 'mentor-arrival';
+  card.tabIndex = -1;
+  card.setAttribute('role', 'status');
+  const check = node('span', 'mentor-arrival-check', '✓');
+  check.setAttribute('aria-hidden', 'true');
+  const copy = node('div');
+  copy.append(
+    node('strong', '', '已通过推荐进入'),
+    node('p', 'mentor-arrival-route', `由${source.name}推荐，正在和${target.name}聊天。`),
+  );
+  if (mentor.description) copy.append(node('p', 'mentor-arrival-specialty', mentor.description));
+  card.append(check, copy);
+  ui.messages.parentElement.before(card);
+  card.focus({ preventScroll: true });
+}
+
 function appendTyping(stack) {
   if (stack.querySelector('.message-typing')) return;
   const typing = node('div', 'message-bubble message-typing');
   typing.setAttribute('aria-hidden', 'true');
   typing.append(node('span'), node('span'), node('span'));
-  stack.append(typing);
+  stack.insertBefore(typing, stack.querySelector('.mentor-recommendation'));
 }
 
 function removeTyping(stack) {
@@ -348,14 +407,9 @@ function removeTyping(stack) {
 async function appendReplyPart(stack, text, keepWaiting = () => false) {
   removeTyping(stack);
   const follow = ui.messages.scrollHeight - ui.messages.scrollTop - ui.messages.clientHeight < 64;
-  stack.append(messageBubble(text, true));
+  stack.insertBefore(messageBubble(text, true), stack.querySelector('.mentor-recommendation'));
   if (follow) scrollLatest(true);
   if (keepWaiting()) appendTyping(stack);
-}
-
-async function showReply(stack, text) {
-  stack.replaceChildren();
-  await appendReplyPart(stack, text);
 }
 
 function scrollLatest(force = false) {
@@ -367,7 +421,14 @@ function renderChat(messages = [], loading = false, { preserveScroll = false } =
   const scrollTop = ui.messages.scrollTop;
   const followLatest = ui.messages.scrollHeight - scrollTop - ui.messages.clientHeight < 150;
   const empty = ui['chat-empty'];
-  const rows = messages.map(message => chatMessage(message.role, message.text ?? message.content ?? '', false, message.parts).row);
+  const recommendation = state.mentorRecommendation;
+  const rows = messages.map(message => {
+    const { row, stack } = chatMessage(message.role, message.text ?? message.content ?? '', false, message.parts);
+    if (message.role === 'assistant' && message.id && recommendation?.sessionId === state.sessionId && recommendation.messageId === message.id) {
+      appendMentorRecommendation(stack, recommendation.mentor);
+    }
+    return row;
+  });
   if (empty) {
     empty.hidden = Boolean(rows.length);
     put('chat-empty-title', loading ? '正在加载会话…' : !state.agents.length ? '创建第一个角色' : (state.childId ? `和${agent()?.name || 'Agent'}聊聊` : '选择用户，开始试聊'));
@@ -494,10 +555,14 @@ function usageMetricDetails(usage) {
         ['输出', observed ? tokenCount(usage.outputTokens) : '—'], ['缓存命中', observed ? tokenCount(usage.cachedTokens) : '—'],
         ['推理输出', observed ? tokenCount(usage.reasoningTokens) : '—'],
         ['统计范围', observed ? `${tokenCount(usage.recordedCalls)} 次已记录模型调用` : '尚无用量回执']],
-      note: [coverage, observed ? '包含聊天、搜索、记忆整理及已有历史概括整理；缓存与推理已包含在输入/输出中，不重复相加。' : ''].filter(Boolean).join(' ') },
+      note: [coverage, observed ? '包含聊天、工具和后台整理的模型调用。缓存与推理已包含在输入和输出中。' : ''].filter(Boolean).join(' ') },
     { key: 'cost', title: '本会话费用预估', value: totalFee, partial,
       rows: [['合计', totalFee], ['聊天模型', observed ? usageComponentCost(usage, 'chat') : '—'],
         ['搜索模型', observed ? usageComponentCost(usage, 'search') : '—'], ['记忆模型', observed ? usageComponentCost(usage, 'memory') : '—'],
+        ...(usage?.calls?.some(call => call.kind === 'mentor_trigger')
+          ? [['导师工具触发判断', usageComponentCost(usage, 'mentor_trigger')]] : []),
+        ...(usage?.calls?.some(call => call.kind === 'mentor_decision')
+          ? [['导师推荐判定', usageComponentCost(usage, 'mentor_decision')]] : []),
         ...(usage?.calls?.some(call => call.kind === 'context_brief')
           ? [['历史概括整理', usageComponentCost(usage, 'context_brief')]] : []),
         ['联网等插件', pluginFee]],
@@ -1073,9 +1138,11 @@ async function refreshSessions(preferred = state.sessionId) {
 
 async function openSession(id) {
   const version = ++state.sessionVersion;
+  clearMentorArrival();
   state.sessionId = id || '';
   state.conversation = null;
   state.liveToolCalls = null;
+  state.mentorRecommendation = null;
   renderUsage(null);
   if (id) renderChat([], true);
   else { renderChat(); renderContext(null); return; }
@@ -1095,10 +1162,12 @@ async function changeScope(preferred = '') {
   workspaceClient?.abortChat();
   ++state.scopeVersion;
   ++state.sessionVersion;
+  clearMentorArrival();
   state.sessionId = '';
   state.sessions = [];
   state.conversation = null;
   state.liveToolCalls = null;
+  state.mentorRecommendation = null;
   renderUsage(null);
   state.memorySignature = null;
   state.memoryOpen.clear();
@@ -1152,6 +1221,25 @@ async function runAction(action) {
   try { await action(); }
   catch (error) { show('app-error', error.message); }
   finally { state.busy = false; updateControls(); }
+}
+
+function selectAgent(id, mentor = null) {
+  return runAction(async () => {
+    const offer = state.mentorRecommendation;
+    if (mentor && (offer?.mentor !== mentor || offer.sessionId !== state.sessionId)) return;
+    const target = mentor ? availableMentor(id) : state.agents.find(item => item.id === id);
+    if (!target) return;
+    const source = mentor && agent();
+    const childId = state.childId;
+    const nextScopeVersion = state.scopeVersion + 1;
+    state.agentId = id;
+    await changeScope();
+    if (source && state.authenticated && state.scopeVersion === nextScopeVersion &&
+        agent()?.id === id && state.childId === childId &&
+        (!state.sessionId || state.conversation?.session?.id === state.sessionId)) {
+      showMentorArrival(source, target, mentor);
+    }
+  });
 }
 
 async function readStream(response, onEvent) {
@@ -1233,6 +1321,7 @@ async function requestReply() {
   state.pendingTimer = null;
   if (!batch.length) return;
   state.sending = true;
+  clearMentorRecommendation();
   state.liveToolCalls = [];
   renderLiveTools();
   show('app-error', '');
@@ -1245,6 +1334,7 @@ async function requestReply() {
   scrollLatest(true);
   let id = state.sessionId;
   let began = false;
+  let done = false;
   let streamEnded = false;
   let presentation = Promise.resolve();
   let presentationError;
@@ -1254,10 +1344,17 @@ async function requestReply() {
     const requestId = newRequestId();
     const body = { ...selectedScope(), sessionId: id, requestId, messages: batch.map(({ message }) => message) };
     const scopeVersion = state.scopeVersion;
-    let done = false;
     let text = '';
     const onEvent = event => {
       if (scopeVersion !== state.scopeVersion || !state.authenticated) return;
+      if (event.type === 'mentor_recommendation') {
+        if (!began || streamEnded || event.sessionId !== id || state.mentorRecommendation) return;
+        if (appendMentorRecommendation(reply.stack, event.mentor)) {
+          state.mentorRecommendation = { sessionId: id, mentor: event.mentor };
+          scrollLatest();
+        }
+        return;
+      }
       if (event.type === 'start' && event.sessionId && event.sessionId !== id) {
         renderUsage(null);
         renderChat();
@@ -1298,10 +1395,13 @@ async function requestReply() {
     if (presentationError) throw presentationError;
     removeTyping(reply.stack);
     put('chat-status', '');
-    if (!receivedParts.size) await showReply(reply.stack, text);
+    if (!receivedParts.size && text.trim()) await appendReplyPart(reply.stack, text);
     await Promise.all([refreshSessions(id), refreshMemory()]);
     const data = await api(scoped(`/api/sessions/${encodeURIComponent(id)}`));
     state.conversation = data;
+    if (state.mentorRecommendation?.sessionId === id) {
+      state.mentorRecommendation.messageId = data.messages?.findLast(message => message.role === 'assistant')?.id;
+    }
     state.liveToolCalls = null;
     renderUsage(data.usage);
     renderContext(data.context);
@@ -1310,6 +1410,7 @@ async function requestReply() {
     await presentation;
     removeTyping(reply.stack);
     if (!state.authenticated) return;
+    if (!done) clearMentorRecommendation();
     show('app-error', error.name === 'AbortError' ? '回复已中止，消息草稿与已收到的内容已保留在本机。' : error.message);
     if (workspaceClient) void offerRecovery();
     if (!receivedParts.size) reply.row.remove();
@@ -1413,7 +1514,9 @@ async function loadState(data, { preferDefaultAgent = false } = {}) {
   state.agents = data.agents || [];
   state.children = data.children || [];
   state.model = data.model || {};
-  const defaultAgentId = state.agents.find(item => item.id === 'shen-zhiheng')?.id || state.agents.find(item => item.id === 'lin-xiaoman')?.id || state.agents[0]?.id || '';
+  const defaultAgentId = state.agents.find(item => item.id === 'shen-zhiheng')?.id ||
+    state.agents.find(item => item.id === 'lin-xiaoman')?.id ||
+    [...defaultAgentIds].find(id => state.agents.some(item => item.id === id)) || state.agents[0]?.id || '';
   state.agentId = (preferDefaultAgent ? defaultAgentId : '') ||
     state.agents.find(item => item.id === saved.agentId)?.id || defaultAgentId;
   state.childId = state.children.find(item => item.id === saved.childId)?.id || state.children[0]?.id || '';
@@ -1549,11 +1652,7 @@ const syncAgentGalleryRoute = installAgentGallery({
   onCreate: () => agentEditor.open(),
   onEdit: id => { const selected = state.agents.find(item => item.id === id); if (selected && agentPermissions(selected).canEdit) void agentEditor.open(id); },
   onDelete: id => openAgentDeletion(id),
-  onSelect: id => runAction(async () => {
-    if (!state.agents.some(item => item.id === id)) return;
-    state.agentId = id;
-    await changeScope();
-  }),
+  onSelect: selectAgent,
 });
 installListeners();
 void initializeEntrance();
@@ -1614,6 +1713,8 @@ function showEntrance(message = '') {
   state.catalogAvailable = false;
   state.catalogRevision = null;
   state.catalogAgents = [];
+  clearMentorRecommendation();
+  clearMentorArrival();
   ++state.scopeVersion;
   workspaceClient?.stop();
   clearTimeout(state.pendingTimer);
@@ -1643,6 +1744,7 @@ async function authRequest(path, body) {
 async function enterWorkspace(session) {
   const serial = ++bootstrapSerial;
   ui.logout.hidden = session.passwordRequired === false;
+  el('architecture-entry').hidden = !session.architectureAvailable;
   workspaceClient?.stop();
   if (session.storageMode === 'browser') {
     workspaceClient = new LocalWorkspace({
@@ -1789,7 +1891,7 @@ async function refreshLocalView() {
     const usageChanged = JSON.stringify(state.conversation?.usage ?? null) !== JSON.stringify(conversation?.usage ?? null);
     state.sessions = sessions; state.sessionId = id; state.conversation = conversation;
     if (agentsChanged || childrenChanged || sessionsChanged || selectionChanged) renderSelectors();
-    if (selectionChanged) saveSelection();
+    if (selectionChanged) { clearMentorArrival(); saveSelection(); }
     if (messagesChanged) renderChat(conversation?.messages || [], false, { preserveScroll: !selectionChanged });
     if (contextChanged) renderContext(conversation?.context ?? null);
     if (usageChanged) renderUsage(conversation?.usage ?? null);

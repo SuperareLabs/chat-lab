@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f4ed">
+  <title>工具触发评测 · 鳄鱼爸爸</title>
+  <link rel="stylesheet" href="./tool-trigger-benchmark.css">
+  <script type="module" src="./tool-trigger-benchmark.js"></script>
+</head>
+<body>
+  <div class="page">
+    <header class="site-header">
+      <a class="back-link" href="./"><span aria-hidden="true">←</span> 返回聊天 Demo</a>
+      <span class="site-name">鳄鱼爸爸 · ChatLab</span>
+    </header>
+    <main id="main">
+      <header class="intro">
+        <div>
+          <h1>工具触发评测</h1>
+          <p>用同一套规则和对话样本，比较方舟和 Jev 什么时候触发工具，以及从发出请求到收到判定需要多久。</p>
+        </div>
+        <dl class="run-meta" id="run-meta" hidden></dl>
+      </header>
+
+      <p class="notice" id="loading" role="status">正在加载评测结果…</p>
+      <div class="notice" id="load-error" hidden>
+        <p id="load-error-message" role="alert"></p>
+        <button class="button" id="retry" type="button">重新加载</button>
+      </div>
+      <noscript><p class="notice">启用 JavaScript 后可查看完整评测结果。</p></noscript>
+
+      <div id="report" hidden>
+        <section aria-labelledby="overview-title">
+          <header class="section-header">
+            <h2 id="overview-title">总体对比</h2>
+            <a href="#cases">查看逐条结果 <span aria-hidden="true">↓</span></a>
+          </header>
+          <p class="partial-notice" id="partial-notice" hidden></p>
+          <div class="overview" id="overview"></div>
+          <div class="paired" id="paired" aria-label="同题正确结果"></div>
+        </section>
+
+        <section id="role-comparisons" aria-labelledby="role-comparison-title" hidden>
+          <header class="section-header">
+            <h2 id="role-comparison-title">同一句换角色</h2>
+            <p>保留原话和前文，只换当前导师，对照 <code>find_mentor</code> 的触发结果。</p>
+          </header>
+          <dl class="role-comparison-stats" id="role-comparison-stats"></dl>
+          <div class="role-comparison-list" id="role-comparison-list"></div>
+        </section>
+
+        <section aria-labelledby="breakdown-title">
+          <header class="section-header">
+            <h2 id="breakdown-title">按场景和工具</h2>
+          </header>
+          <div class="breakdowns">
+            <div class="panel">
+              <h3>场景准确率</h3>
+              <div id="group-summary"></div>
+            </div>
+            <div class="panel">
+              <h3>工具触发</h3>
+              <div id="tool-summary"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="cases" aria-labelledby="cases-title">
+          <header class="section-header">
+            <h2 id="cases-title">逐条测试结果</h2>
+            <p>展开任意样本，查看对话上下文和工具判定。</p>
+          </header>
+          <div class="case-panel">
+            <form class="filters" id="filters" role="search" aria-label="筛选测试样本">
+              <label class="search">
+                <span>搜索原话</span>
+                <input id="search" type="search" autocomplete="off" placeholder="搜索内容、上下文或样本编号">
+              </label>
+              <label>
+                <span>场景</span>
+                <select id="group-filter"><option value="">全部场景</option></select>
+              </label>
+              <label>
+                <span>关联工具</span>
+                <select id="tool-filter"><option value="">全部工具</option></select>
+              </label>
+              <label>
+                <span>结果</span>
+                <select id="outcome-filter">
+                  <option value="">全部结果</option>
+                  <option value="wrong">至少一方有误</option>
+                  <option value="different">只有一方正确</option>
+                  <option value="bothwrong">双方有误</option>
+                  <option value="correct">双方正确</option>
+                  <option value="error">接口失败</option>
+                  <option value="uncertain">有不确定判断</option>
+                </select>
+              </label>
+            </form>
+            <div class="case-count" id="case-count" role="status"></div>
+            <div class="case-columns case-grid" id="case-columns" aria-hidden="true">
+              <span>样本 / 对话原话</span>
+              <span>预期工具</span>
+              <span id="ark-column"></span>
+              <span id="jev-column"></span>
+              <span></span>
+            </div>
+            <div id="case-list"></div>
+          </div>
+        </section>
+
+        <section aria-labelledby="method-title">
+          <header class="section-header">
+            <h2 id="method-title">评测口径</h2>
+          </header>
+          <dl class="method" id="method"></dl>
+          <details class="rules" id="rules" hidden>
+            <summary>查看本轮完整判断规则</summary>
+            <div class="rule-content" id="rule-content"></div>
+          </details>
+        </section>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

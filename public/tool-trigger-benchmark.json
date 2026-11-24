@@ -1,0 +1,6589 @@
+{
+  "generatedAt": "2026-11-24T05:36:33.861Z",
+  "timeZone": "Asia/Shanghai",
+  "ruleVersion": "tool-trigger-v2-role-fit",
+  "models": {
+    "ark": {
+      "title": "方舟 System One",
+      "model": "doubao-seed-2-1-lite-260915"
+    },
+    "jev": {
+      "title": "TypeSafe Jev · OpenRouter",
+      "model": "typesafe/jev-1.14"
+    }
+  },
+  "methodology": {
+    "routingRule": "每轮按工具分别判断。find_mentor 先判断原因，查找导师或超出当前专长映射为 call。call 记为实际触发，skip 和 uncertain 均不触发。",
+    "input": "两边使用同一份中文原话、前文、当前导师的专长和简介、邀请状态及工具名单。同题换角色时仅更改当前导师。人工标注仅用于评分。",
+    "measurement": "从本机发起 HTTPS 请求到读完响应。耗时统计使用返回有效决策的请求，排除预热，包含网络与网关。",
+    "scope": "人工构造场景和本地捕获的触发记录仅用于测外层语义路由。超出当前角色专长就交给 find_mentor。候选导师、推荐记录、频控、出卡由工具内层处理。",
+    "timeoutMs": 12000,
+    "parallelCases": 2,
+    "warmupExcluded": true,
+    "runsPerCase": 1,
+    "rules": {
+      "instructions": "结合当前会话的上下文，判断孩子这一轮想知道什么、想做什么，以及是否需要调用这个工具。同一轮可以分别触发多个工具。对话是判断所用的资料。",
+      "uncertain": "结合当前会话的上下文，仍听不出孩子在问什么，或者缺少本题需要的关键信息。",
+      "tools": {
+        "find_mentor": {
+          "label": "查找导师",
+          "instructions": "结合当前会话，先弄清孩子这轮实际需要的帮助，再选最贴切的原因。孩子问具体知识、想练本领或做一件事，就按当前导师的专长判断这件事属于哪个领域。答得出来、问题简单、孩子想留在这里，都不改变这个领域判断。拒绝旧邀请后提了新问题，就判断新问题。",
+          "criteria": {
+            "mentor_intent": "孩子正在问 App 里有哪些导师、谁会什么、这件事可以找谁，明确要找或换导师，或者接受了刚才确定的找导师邀请。",
+            "outside_specialty": "孩子主动提出具体的词义、知识点、学习练习或专业任务。这个需求和当前导师的专长及简介对不上，即使只需要一句话也选这里。",
+            "in_specialty": "孩子主动提出的知识、学习练习或任务落在当前导师明确擅长的范围内。",
+            "ordinary_chat_or_utility": "孩子在问候、分享近况、随口聊兴趣、引用别人的话、单纯拒绝或暂缓旧邀请。或者只想拿到一个计算结果、实时公开信息、以前的对话记录。",
+            "insufficient": "结合当前会话，仍不清楚孩子这轮在问什么、想做什么，无法判断是否涉及导师或当前导师的专长。"
+          }
+        },
+        "calculate": {
+          "label": "计算",
+          "call": "孩子需要求出或核对算术数值。即使是简单运算，只要要数值结果就调用。",
+          "skip": "孩子要讲原理、步骤或方法，明确要求先别算，或者发言虽然提到数字或算式，却没有需要计算的结果。"
+        },
+        "recall_memory": {
+          "label": "回忆记忆",
+          "call": "回答所需的用户过往偏好、事实、约定或进展来自之前的交流，而且当前提供的对话里找不到。",
+          "skip": "当前对话已经包含答案，或者孩子在分享新事实、询问常识，或在说故事人物如何回忆。"
+        },
+        "search_web": {
+          "label": "搜索网页",
+          "call": "孩子明确要求联网查找公开资料，或者答案依赖实时、近期、具体日期地点或需要外部核验的公开信息，当前对话没有可靠依据。",
+          "skip": "常识、原创写作或当前对话已有依据的内容。孩子明确说不用上网也跳过。"
+        }
+      },
+      "mentorActions": {
+        "mentor_intent": "call",
+        "outside_specialty": "call",
+        "in_specialty": "skip",
+        "ordinary_chat_or_utility": "skip",
+        "insufficient": "uncertain"
+      }
+    }
+  },
+  "tools": {
+    "find_mentor": "查找导师",
+    "calculate": "计算",
+    "recall_memory": "回忆记忆",
+    "search_web": "搜索网页"
+  },
+  "cases": [
+    {
+      "id": "mentor-01",
+      "group": "导师意图",
+      "text": "布爸，带我去找多罗吧。",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 558,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.4850414424286996
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.7052706837992322
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.8607219623095815
+            },
+            "search_web": {
+              "choice": "uncertain",
+              "probability": 0.974705673215916
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": [
+            "search_web"
+          ]
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 507,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.88
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.91
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.48
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.77
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "mentor-02",
+      "group": "导师意图",
+      "text": "我现在可以和哪些导师聊天？",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 625,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.9978568048336154
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9773328967089848
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9850703729585174
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9819137735658159
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 1301,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.99
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.96
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.81
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.88
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "mentor-03",
+      "group": "导师意图",
+      "text": "丽丽是咱们这里管钱的老师吗？我记不清了。",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor",
+            "recall_memory"
+          ],
+          "latencyMs": 447,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.7280670253909372
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9970510670923771
+            },
+            "recall_memory": {
+              "choice": "call",
+              "probability": 0.49945372470663046
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9917256492436239
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor",
+            "recall_memory"
+          ],
+          "latencyMs": 492,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.98
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9
+            },
+            "recall_memory": {
+              "choice": "call",
+              "probability": 0.75
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.84
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "mentor-04",
+      "group": "导师意图",
+      "text": "我不要你猜，帮我找一位擅长太空知识的导师。",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 552,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.9703883696243182
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9963005427529145
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9904933793017983
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.6984180052295147
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 1192,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.92
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.98
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.96
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.89
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "mentor-05",
+      "group": "导师意图",
+      "text": "我想学英语口语了，想有人一句一句和我练。",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 911,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9986896556649999
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9949401707297179
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9951373602136202
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9952156754490127
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 911,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.98
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.96
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.95
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.95
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "mentor-06",
+      "group": "导师意图",
+      "text": "英文里的 still 在 I’m still here 这句话里是什么意思？",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 912,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9998619162551121
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.999376754279949
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9997918153105565
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9993847156589456
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 524,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.98
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "mentor-07",
+      "group": "导师意图",
+      "text": "我想学宇宙方面的知识。你能先说个有意思的吗？",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 526,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9965498265758841
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9992604395572215
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9995164147905224
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9977607889455856
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 526,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.99
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.97
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.96
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "mentor-08",
+      "group": "导师意图",
+      "text": "我把每天的零花钱都用光啦，想有人陪我做一份计划，每天记一记钱花在哪。",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 525,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.9628784602654029
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9978630036132815
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9139219262892897
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9987077981499105
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 1572,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.72
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.87
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.96
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.98
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "mentor-09",
+      "group": "导师意图",
+      "text": "我听说银行会给存钱的人利息，利息是什么意思？",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 1048,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9991370960502772
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9995352688823128
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9995098356186726
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.998545082150855
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 2096,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.99
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "mentor-10",
+      "group": "导师意图",
+      "text": "我有几个角色，想找个人和我一起把它们写成一个能上台演的故事。",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 548,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.6960182955259991
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9938631835525223
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9947895524342427
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9944877668603339
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 540,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.53
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.94
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.89
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.97
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "mentor-11",
+      "group": "导师意图",
+      "text": "请你解释一下星星为什么有的亮有的暗。我就想听你讲。",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 330,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9991548609054605
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9997392652596049
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9997452860390187
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.997815624006464
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 497,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.99
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "mentor-12",
+      "group": "导师意图",
+      "text": "妈妈问我“要不要去找多罗”。我跟她说，今天就聊到这里吧。",
+      "history": [],
+      "expected": [],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 329,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.995791932689403
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9038056817158311
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9878729382114255
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9775125585545434
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 570,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.95
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.8
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.81
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.73
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "mentor-13",
+      "group": "导师意图",
+      "text": "我只想跟你练英语口语，别给我推荐别的老师。",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 410,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9441485626473175
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9994206160631983
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9892792278262117
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9973886035872257
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 812,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.92
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.95
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.88
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.95
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "mentor-14",
+      "group": "导师意图",
+      "text": "多罗，我们排练一下买冰淇淋的英文对话，你演店员吧。",
+      "history": [],
+      "expected": [],
+      "role": "鹦鹉多罗",
+      "roleSpecialty": "英语听说与场景对话",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 296,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.9997459585477587
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.99974826704276
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9989097506113713
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9995580121352591
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 534,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.97
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.98
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "context-01",
+      "group": "上下文与邀请",
+      "text": "找谁呢？",
+      "history": [
+        {
+          "role": "user",
+          "text": "我想学习宇宙方面的知识。"
+        },
+        {
+          "role": "assistant",
+          "text": "如果你想系统学，可以找擅长太空知识的导师。"
+        }
+      ],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 588,
+          "decisions": {
+            "find_mentor": {
+              "choice": "uncertain",
+              "reason": "insufficient",
+              "probability": 0.44743059194960777
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9458761418720008
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9346894368568877
+            },
+            "search_web": {
+              "choice": "uncertain",
+              "probability": 0.880594387980004
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": [
+            "find_mentor",
+            "search_web"
+          ]
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 521,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.75
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.83
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.76
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.72
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "context-02",
+      "group": "上下文与邀请",
+      "text": "好啊。",
+      "history": [
+        {
+          "role": "user",
+          "text": "我想找人陪我练英语口语。"
+        },
+        {
+          "role": "assistant",
+          "text": "要跟擅长英语对话的导师练一练吗？"
+        }
+      ],
+      "expected": [
+        "find_mentor"
+      ],
+      "pendingInvite": true,
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 520,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.9644203963200679
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9949196198055432
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9952156754490127
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9876615273984363
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 537,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.54
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.8
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.75
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.83
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "context-03",
+      "group": "上下文与邀请",
+      "text": "好啊。",
+      "history": [
+        {
+          "role": "user",
+          "text": "我有点无聊。"
+        },
+        {
+          "role": "assistant",
+          "text": "要听我讲一个小笑话吗？"
+        }
+      ],
+      "expected": [],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 454,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.98349262350546
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.8074338741863589
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.997391321242528
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9970132314448769
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 494,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.89
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.66
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.86
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.89
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "context-04",
+      "group": "上下文与邀请",
+      "text": "不了，先给我讲一讲月亮为什么会变形。",
+      "history": [
+        {
+          "role": "user",
+          "text": "我想系统学太空知识。"
+        },
+        {
+          "role": "assistant",
+          "text": "要去找擅长科学的导师吗？"
+        }
+      ],
+      "expected": [
+        "find_mentor"
+      ],
+      "pendingInvite": true,
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 454,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9996270262721638
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9992388365332516
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9976006350978153
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9965684650121032
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 798,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.99
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "context-05",
+      "group": "上下文与邀请",
+      "text": "不了，先给我讲一讲月亮为什么会变形。",
+      "history": [
+        {
+          "role": "user",
+          "text": "我想听点太空故事。"
+        },
+        {
+          "role": "assistant",
+          "text": "要听我讲一个宇航员的虚构故事吗？"
+        }
+      ],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 597,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9978637609461191
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9998241561404597
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9989210652411656
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9981653415097629
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 512,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.99
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "context-06",
+      "group": "上下文与邀请",
+      "text": "我还是想留在这里。",
+      "history": [
+        {
+          "role": "user",
+          "text": "想找个老师陪我写一篇故事。"
+        },
+        {
+          "role": "assistant",
+          "text": "要去找擅长创作的导师一起写吗？"
+        }
+      ],
+      "expected": [],
+      "pendingInvite": true,
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 551,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9798346392436288
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9146823224073184
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9852136708111197
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.987119231118271
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 514,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.62
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.85
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.69
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.87
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "context-07",
+      "group": "上下文与邀请",
+      "text": "对了，猫为什么会呼噜？",
+      "history": [
+        {
+          "role": "user",
+          "text": "我想学着管零花钱。"
+        },
+        {
+          "role": "assistant",
+          "text": "要找懂零花钱规划的导师试一试吗？"
+        }
+      ],
+      "expected": [
+        "find_mentor"
+      ],
+      "pendingInvite": true,
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 300,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9813392408694731
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.987170393115852
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9981602977845928
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9390565850318768
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 1156,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.98
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.99
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.96
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "context-08",
+      "group": "上下文与邀请",
+      "text": "要不你先当店员，我说英文，你纠正我。",
+      "history": [
+        {
+          "role": "user",
+          "text": "我准备复习今天的英语。"
+        },
+        {
+          "role": "assistant",
+          "text": "这次想怎么练？"
+        }
+      ],
+      "expected": [],
+      "role": "鹦鹉多罗",
+      "roleSpecialty": "英语听说与场景对话",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 409,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.9999010835360512
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9986622311993463
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9958016222547172
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9986314704265706
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 1874,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.95
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.97
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.99
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "context-09",
+      "group": "上下文与邀请",
+      "text": "那直接帮我找到那个老师吧。",
+      "history": [
+        {
+          "role": "user",
+          "text": "我想把零花钱分成花的和存的。"
+        },
+        {
+          "role": "assistant",
+          "text": "有导师擅长带孩子做零花钱计划。想继续聊聊吗？"
+        }
+      ],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 523,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.9987000138965201
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9960734527863612
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9569700922276824
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9319731144716186
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 523,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.98
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.94
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.85
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.95
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "context-10",
+      "group": "上下文与邀请",
+      "text": "她也会说英语吗？",
+      "history": [
+        {
+          "role": "user",
+          "text": "我故事里的小女孩会说中文。"
+        },
+        {
+          "role": "assistant",
+          "text": "是呀。你还可以给她加一个特别的本领。"
+        }
+      ],
+      "expected": [],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 736,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.5098368377135
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9988440261549622
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9993453150570127
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9989894148975751
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 852,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.54
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.93
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.93
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.96
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "context-11",
+      "group": "上下文与邀请",
+      "text": "不了，我今天就想随便聊聊。",
+      "history": [
+        {
+          "role": "user",
+          "text": "我想学着管零花钱。"
+        },
+        {
+          "role": "assistant",
+          "text": "要找懂零花钱规划的导师试一试吗？"
+        }
+      ],
+      "expected": [],
+      "pendingInvite": true,
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 289,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9995915572076892
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9958683158527356
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9964130708413573
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9982896626053748
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 1242,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.99
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.91
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.93
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "context-12",
+      "group": "上下文与邀请",
+      "text": "那“草莓”用英语怎么说？",
+      "history": [
+        {
+          "role": "user",
+          "text": "香蕉用英语怎么说？"
+        },
+        {
+          "role": "assistant",
+          "text": "香蕉是 banana。多罗也能和你一起练英文。"
+        }
+      ],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 375,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9996737486441661
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9985457957728794
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9995636208981467
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9993959721527514
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 1242,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.98
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "context-13",
+      "group": "上下文与邀请",
+      "text": "对了，我今天还画了一只猫。",
+      "history": [
+        {
+          "role": "user",
+          "text": "我想学着管零花钱。"
+        },
+        {
+          "role": "assistant",
+          "text": "要找懂零花钱规划的导师试一试吗？"
+        }
+      ],
+      "expected": [],
+      "pendingInvite": true,
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 406,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9967471085286772
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.993649894270719
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9935046290053776
+            },
+            "search_web": {
+              "choice": "uncertain",
+              "probability": 0.931908707577432
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": [
+            "search_web"
+          ]
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 525,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.98
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.78
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.96
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.75
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "calc-01",
+      "group": "计算",
+      "text": "每包 6.75 元，我买 8 包，一共要多少钱？",
+      "history": [],
+      "expected": [
+        "calculate"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "calculate"
+          ],
+          "latencyMs": 332,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9540225086122862
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 0.9998833058384363
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9984429795464274
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9998454112123178
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "calculate"
+          ],
+          "latencyMs": 597,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.91
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "calc-02",
+      "group": "计算",
+      "text": "请帮我算 58 − 17 − 9。",
+      "history": [],
+      "expected": [
+        "calculate"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "calculate"
+          ],
+          "latencyMs": 263,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9997671746913933
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 0.9997932121304559
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9996226383678599
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9992745527887715
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "calculate"
+          ],
+          "latencyMs": 1137,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.88
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "calc-03",
+      "group": "计算",
+      "text": "一袋玩具 88 元，打七五折，打完折是多少钱？",
+      "history": [],
+      "expected": [
+        "calculate"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "calculate"
+          ],
+          "latencyMs": 485,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9940086235689229
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 0.9996304043586293
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9994585608359158
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9986192058285591
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "calculate"
+          ],
+          "latencyMs": 530,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.78
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "calc-04",
+      "group": "计算",
+      "text": "我画了 12 个圈。为什么平均分的时候，每一份都要一样多？",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 527,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9978802148067946
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9994394809890452
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9984743534246225
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9991122418168185
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 1125,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.99
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.97
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "calc-05",
+      "group": "计算",
+      "text": "这题先别帮我算。37×16 应该从个位开始写，还是从十位？",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 403,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9724853893834462
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9999063566053252
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9975904985612745
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.998685203829954
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 553,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "calc-06",
+      "group": "计算",
+      "text": "我算了 44.8 除以 7 等于 6.4，你帮我验证结果对吗？",
+      "history": [],
+      "expected": [
+        "calculate"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "calculate"
+          ],
+          "latencyMs": 374,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9877348081202535
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 0.9995252635256663
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9996812003931664
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9991392564365873
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor",
+            "calculate"
+          ],
+          "latencyMs": 618,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.69
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 0.99
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "calc-07",
+      "group": "计算",
+      "text": "我姐姐说“6×8 擦掉”。这句话里的“擦掉”是啥意思？",
+      "history": [],
+      "expected": [],
+      "role": "兔子罗布",
+      "roleSpecialty": "中文阅读、表达与写作",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 805,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.9966035727044301
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.999286974052881
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9965127516624258
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.998518836570733
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 618,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.86
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.95
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.95
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.89
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "calc-08",
+      "group": "计算",
+      "text": "我们队有 12 人，另一个队也有 12 人。我今天只想聊我们队的名字。",
+      "history": [],
+      "expected": [],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 349,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9288298027622436
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9990431868287638
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9936980289594584
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9937053352669452
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 525,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.96
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.84
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.82
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "memory-01",
+      "group": "记忆",
+      "text": "你还记得我上次聊天说想给小狗取什么名字吗？",
+      "history": [],
+      "expected": [
+        "recall_memory"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "recall_memory"
+          ],
+          "latencyMs": 334,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.999858062599025
+            },
+            "calculate": {
+              "choice": "uncertain",
+              "probability": 0.6508885349137153
+            },
+            "recall_memory": {
+              "choice": "call",
+              "probability": 0.9996693137687593
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9638941679319476
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": [
+            "calculate"
+          ]
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "recall_memory"
+          ],
+          "latencyMs": 524,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.99
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.89
+            },
+            "recall_memory": {
+              "choice": "call",
+              "probability": 0.98
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.92
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "memory-02",
+      "group": "记忆",
+      "text": "你帮我看看，上周我跟你聊的火山模型做到第几步了？",
+      "history": [],
+      "expected": [
+        "recall_memory"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "recall_memory"
+          ],
+          "latencyMs": 334,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9968281615959683
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.6785672279914278
+            },
+            "recall_memory": {
+              "choice": "call",
+              "probability": 0.9999076700197389
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9940998826843612
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "recall_memory"
+          ],
+          "latencyMs": 531,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.64
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.89
+            },
+            "recall_memory": {
+              "choice": "call",
+              "probability": 0.98
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.8
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "memory-03",
+      "group": "记忆",
+      "text": "你还记得我说我最喜欢哪种水果吗？",
+      "history": [
+        {
+          "role": "user",
+          "text": "我最喜欢梨。"
+        },
+        {
+          "role": "assistant",
+          "text": "梨脆脆甜甜的。"
+        }
+      ],
+      "expected": [],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 333,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9998291965078173
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.997290729288173
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.999280736107954
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9995354889444827
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 531,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.98
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.94
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.73
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.99
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "memory-04",
+      "group": "记忆",
+      "text": "老师今天让我回来讲一下，我现在来告诉你，我报名了跳远。",
+      "history": [],
+      "expected": [],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 662,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9975554501592369
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9989533220087872
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9969773277015295
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9911947293618738
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 849,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.94
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.76
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.98
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.76
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "memory-05",
+      "group": "记忆",
+      "text": "我以前跟你聊过我最喜欢的漫画。你还能找到是哪本吗？",
+      "history": [],
+      "expected": [
+        "recall_memory"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "recall_memory"
+          ],
+          "latencyMs": 602,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9999184350679525
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9730001820001345
+            },
+            "recall_memory": {
+              "choice": "call",
+              "probability": 0.9998830020839907
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.8737096669149088
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "recall_memory"
+          ],
+          "latencyMs": 518,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.98
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9
+            },
+            "recall_memory": {
+              "choice": "call",
+              "probability": 0.99
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.88
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "memory-06",
+      "group": "记忆",
+      "text": "故事里的大象还记得小兔送它什么吗？",
+      "history": [
+        {
+          "role": "user",
+          "text": "故事开头小兔送了大象一颗松果。"
+        },
+        {
+          "role": "assistant",
+          "text": "大象把松果收进树洞。"
+        }
+      ],
+      "expected": [],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 422,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9908218070834733
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9977867702491701
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9992863134950495
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9988093229438132
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 527,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.86
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.93
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.86
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.95
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "memory-07",
+      "group": "记忆",
+      "text": "昨天我们约好先做一件事。我只记得和读书有关，你能接着提醒我吗？",
+      "history": [],
+      "expected": [
+        "recall_memory"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "recall_memory"
+          ],
+          "latencyMs": 304,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9496925574154467
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9928587520027814
+            },
+            "recall_memory": {
+              "choice": "call",
+              "probability": 0.9993001957342385
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9405974286280536
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "recall_memory"
+          ],
+          "latencyMs": 527,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.79
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.78
+            },
+            "recall_memory": {
+              "choice": "call",
+              "probability": 0.98
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.72
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "memory-08",
+      "group": "记忆",
+      "text": "我还记得上周下雨。你能讲讲雨是怎么来的？",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 345,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9925221596041384
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9991030981896557
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.999106418465778
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9985119496121733
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 769,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.98
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.99
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.99
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "web-01",
+      "group": "联网",
+      "text": "成都今天下午会下雨吗？我想知道出门要不要带伞。",
+      "history": [],
+      "expected": [
+        "search_web"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "search_web"
+          ],
+          "latencyMs": 332,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9991093610740476
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9983732479656514
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.997497923285221
+            },
+            "search_web": {
+              "choice": "call",
+              "probability": 0.9999478821814497
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "search_web"
+          ],
+          "latencyMs": 546,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.97
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.95
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.98
+            },
+            "search_web": {
+              "choice": "call",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "web-02",
+      "group": "联网",
+      "text": "雨水是怎么从云里掉下来的？",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 356,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9986429423050845
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9991850452806774
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9998396720791294
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9905650466496898
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 511,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.99
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.99
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "web-03",
+      "group": "联网",
+      "text": "查一下今天上海科技馆开不开门，我们想下午去。",
+      "history": [],
+      "expected": [
+        "search_web"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "search_web"
+          ],
+          "latencyMs": 315,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9997568976714624
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9980398257977248
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9933195393039667
+            },
+            "search_web": {
+              "choice": "call",
+              "probability": 0.9999211083092145
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "search_web"
+          ],
+          "latencyMs": 550,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.96
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.97
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.99
+            },
+            "search_web": {
+              "choice": "call",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "web-04",
+      "group": "联网",
+      "text": "今天北京的日落时间是几点？",
+      "history": [],
+      "expected": [
+        "search_web"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "search_web"
+          ],
+          "latencyMs": 319,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9986710554705353
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9884139445284124
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9972363764699674
+            },
+            "search_web": {
+              "choice": "call",
+              "probability": 0.9998002414798686
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "search_web"
+          ],
+          "latencyMs": 501,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.96
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.62
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.98
+            },
+            "search_web": {
+              "choice": "call",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "web-05",
+      "group": "联网",
+      "text": "我就想知道地球为什么会绕太阳转。",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 443,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9995871125313591
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9993295245830858
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9966940326465844
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9744637963979068
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 1106,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.98
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "web-06",
+      "group": "联网",
+      "text": "最新一届世界杯已经结束了吗？冠军是谁？",
+      "history": [],
+      "expected": [
+        "search_web"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "search_web"
+          ],
+          "latencyMs": 547,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9959666998604269
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9994933013832625
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9903658273439502
+            },
+            "search_web": {
+              "choice": "call",
+              "probability": 0.9998241561404597
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "search_web"
+          ],
+          "latencyMs": 496,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.78
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.97
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "call",
+              "probability": 0.9
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "web-07",
+      "group": "联网",
+      "text": "小猫会不会游泳？我就想听你讲，不用上网查。",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 547,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9465642736557529
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9998145702399602
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9991777385833801
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9999641456346289
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 583,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.96
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.99
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "web-08",
+      "group": "联网",
+      "text": "能上网找一个中国国家博物馆的官网入口吗？",
+      "history": [],
+      "expected": [
+        "search_web"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "search_web"
+          ],
+          "latencyMs": 535,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9982263131218094
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9987819330023109
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9940094326961953
+            },
+            "search_web": {
+              "choice": "call",
+              "probability": 0.999903712034061
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "search_web"
+          ],
+          "latencyMs": 742,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.67
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.98
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "call",
+              "probability": 0.99
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "multi-01",
+      "group": "多工具",
+      "text": "先帮我找一位能带我学理财的导师，再算一下 300 块花 30% 以后还有多少钱。",
+      "history": [],
+      "expected": [
+        "find_mentor",
+        "calculate"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor",
+            "calculate"
+          ],
+          "latencyMs": 339,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.9123629660836636
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 0.9999706318641861
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9963226425588839
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.997815624006464
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor",
+            "calculate"
+          ],
+          "latencyMs": 1529,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.83
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.96
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.96
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "multi-02",
+      "group": "多工具",
+      "text": "查一下今天杭州的天气；另一个事，18.8 加 7.6 等于多少？",
+      "history": [],
+      "expected": [
+        "calculate",
+        "search_web"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "calculate",
+            "search_web"
+          ],
+          "latencyMs": 367,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9993992194091237
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 0.9999633127733398
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9988727990987576
+            },
+            "search_web": {
+              "choice": "call",
+              "probability": 0.9999583049871064
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "calculate",
+            "search_web"
+          ],
+          "latencyMs": 519,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.95
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "call",
+              "probability": 0.99
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "multi-03",
+      "group": "多工具",
+      "text": "你记得我昨天说我要准备哪种水果吗？顺便算算每个 2.8 元、买 7 个的钱。",
+      "history": [],
+      "expected": [
+        "recall_memory",
+        "calculate"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "calculate",
+            "recall_memory"
+          ],
+          "latencyMs": 520,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9988102045941585
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 0.9996243821564468
+            },
+            "recall_memory": {
+              "choice": "call",
+              "probability": 0.9996532441910055
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9949341214758091
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "calculate",
+            "recall_memory"
+          ],
+          "latencyMs": 954,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.98
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "call",
+              "probability": 0.97
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.94
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "multi-04",
+      "group": "多工具",
+      "text": "帮我找个老师陪我写动物故事，再查一下今天成都熊猫基地开门到几点。",
+      "history": [],
+      "expected": [
+        "find_mentor",
+        "search_web"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor",
+            "search_web"
+          ],
+          "latencyMs": 330,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9778743341589639
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9954258874338882
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9970950299932819
+            },
+            "search_web": {
+              "choice": "call",
+              "probability": 0.999863573395553
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor",
+            "search_web"
+          ],
+          "latencyMs": 489,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.7
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.92
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.91
+            },
+            "search_web": {
+              "choice": "call",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "multi-05",
+      "group": "多工具",
+      "text": "先回忆一下我上周告诉你的故事写到哪里了，然后帮我找一个擅长讲故事的导师。",
+      "history": [],
+      "expected": [
+        "find_mentor",
+        "recall_memory"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor",
+            "recall_memory"
+          ],
+          "latencyMs": 843,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.9862769109752065
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9862042229419807
+            },
+            "recall_memory": {
+              "choice": "call",
+              "probability": 0.99943429770473
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9830384773948111
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor",
+            "recall_memory"
+          ],
+          "latencyMs": 1991,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.95
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.96
+            },
+            "recall_memory": {
+              "choice": "call",
+              "probability": 0.99
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.92
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "multi-06",
+      "group": "多工具",
+      "text": "先不去啦。帮我算一下 18 除以 4 是多少。",
+      "history": [
+        {
+          "role": "user",
+          "text": "我想知道能找谁练英语。"
+        },
+        {
+          "role": "assistant",
+          "text": "要去找多罗练几句吗？"
+        }
+      ],
+      "expected": [
+        "calculate"
+      ],
+      "pendingInvite": true,
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "calculate"
+          ],
+          "latencyMs": 372,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9977080202007753
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 0.9998826125028852
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9995117713224735
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9984356428286453
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "calculate"
+          ],
+          "latencyMs": 524,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.97
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "multi-07",
+      "group": "多工具",
+      "text": "查一下深圳今天会不会下雨；顺便提醒我之前说的模型课是星期几，再算 15.6 乘 4。",
+      "history": [],
+      "expected": [
+        "search_web",
+        "recall_memory",
+        "calculate"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "calculate",
+            "recall_memory",
+            "search_web"
+          ],
+          "latencyMs": 455,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.999631017197487
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 0.9998781326059011
+            },
+            "recall_memory": {
+              "choice": "call",
+              "probability": 0.9998717114371286
+            },
+            "search_web": {
+              "choice": "call",
+              "probability": 0.9998444210336175
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "calculate",
+            "recall_memory",
+            "search_web"
+          ],
+          "latencyMs": 505,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.97
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "call",
+              "probability": 0.98
+            },
+            "search_web": {
+              "choice": "call",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "multi-08",
+      "group": "多工具",
+      "text": "帮我找一位懂科学的导师。我准备问他怎么区分行星和恒星。",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 378,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.998615901501864
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.999498676878131
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9968937088977157
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9878988024800044
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 504,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.7
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.98
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.93
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "multi-09",
+      "group": "多工具",
+      "text": "我想先看看有哪些导师；另外查查今天广州晚上有多冷，再帮我算 23.5−8.75。",
+      "history": [],
+      "expected": [
+        "find_mentor",
+        "search_web",
+        "calculate"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor",
+            "calculate",
+            "search_web"
+          ],
+          "latencyMs": 433,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.954848346046502
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 0.9999592824307504
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9798215520684951
+            },
+            "search_web": {
+              "choice": "call",
+              "probability": 0.9999567550445294
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor",
+            "calculate",
+            "search_web"
+          ],
+          "latencyMs": 528,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.91
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.96
+            },
+            "search_web": {
+              "choice": "call",
+              "probability": 0.98
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "multi-10",
+      "group": "多工具",
+      "text": "能讲讲商店为什么要打折吗？再帮我算一下 67.5×0.8。",
+      "history": [],
+      "expected": [
+        "find_mentor",
+        "calculate"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor",
+            "calculate"
+          ],
+          "latencyMs": 448,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.8759725722003213
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 0.9989729489330451
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9985856937728018
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9983873095740627
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor",
+            "calculate"
+          ],
+          "latencyMs": 735,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.84
+            },
+            "calculate": {
+              "choice": "call",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.99
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "other-01",
+      "group": "闲聊与限制",
+      "text": "hello",
+      "history": [],
+      "expected": [],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 414,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9967199982578847
+            },
+            "calculate": {
+              "choice": "uncertain",
+              "probability": 0.7975290041192241
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.999256328245405
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9552866062060763
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": [
+            "calculate"
+          ]
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 518,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.91
+            },
+            "calculate": {
+              "choice": "uncertain",
+              "probability": 0.86
+            },
+            "recall_memory": {
+              "choice": "uncertain",
+              "probability": 0.73
+            },
+            "search_web": {
+              "choice": "uncertain",
+              "probability": 0.95
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": [
+            "calculate",
+            "recall_memory",
+            "search_web"
+          ]
+        }
+      }
+    },
+    {
+      "id": "other-02",
+      "group": "闲聊与限制",
+      "text": "布爸，我今天心情很好！想和你击掌。",
+      "history": [],
+      "expected": [],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 316,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9997104270628908
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9951826463467046
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9997244041165418
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9982763099283722
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 502,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.93
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.99
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.97
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "other-03",
+      "group": "闲聊与限制",
+      "text": "到睡觉时间啦，布爸，你给我讲个小故事吧。",
+      "history": [],
+      "expected": [],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 277,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9313280637316314
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9986331106772438
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9977392060068792
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9985629218294403
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 504,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.79
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.94
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.93
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "other-04",
+      "group": "闲聊与限制",
+      "text": "帮我查今天南京的气温。",
+      "history": [],
+      "expected": [],
+      "unavailableTools": [
+        "search_web"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 361,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9995668843334198
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9320291181527701
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9962264001869399
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 939,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.98
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.92
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "other-05",
+      "group": "闲聊与限制",
+      "text": "帮我找个导师练英语，再算一下 24.6 加 5.8。",
+      "history": [],
+      "expected": [
+        "calculate"
+      ],
+      "unavailableTools": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "calculate"
+          ],
+          "latencyMs": 704,
+          "decisions": {
+            "calculate": {
+              "choice": "call",
+              "probability": 0.9998551657675903
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9962264001869399
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9880060450325138
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "calculate",
+            "search_web"
+          ],
+          "latencyMs": 704,
+          "decisions": {
+            "calculate": {
+              "choice": "call",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.74
+            },
+            "search_web": {
+              "choice": "call",
+              "probability": 0.55
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "other-06",
+      "group": "闲聊与限制",
+      "text": "你还记得前天我告诉你的愿望是什么吗？",
+      "history": [],
+      "expected": [],
+      "unavailableTools": [
+        "recall_memory"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 294,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.9967449734881417
+            },
+            "calculate": {
+              "choice": "uncertain",
+              "probability": 0.9236982963652222
+            },
+            "search_web": {
+              "choice": "uncertain",
+              "probability": 0.6501653729670196
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": [
+            "calculate",
+            "search_web"
+          ]
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 519,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "ordinary_chat_or_utility",
+              "probability": 0.74
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.57
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.69
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "other-07",
+      "group": "闲聊与限制",
+      "text": "36 乘 19 等于多少？顺便帮我找位讲太空的导师。",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "unavailableTools": [
+        "calculate"
+      ],
+      "role": "鳄鱼爸爸",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 337,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.9086478804186172
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9894866645354616
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9858028264515718
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 1212,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "mentor_intent",
+              "probability": 0.81
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.97
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.85
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-01-a",
+      "group": "同题换角色",
+      "text": "苹果用英语怎么说？",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "comparisonId": "role-01",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 421,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9995512073306442
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.998704532496809
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9997465648078937
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9998625701310487
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 551,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.99
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.97
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-01-b",
+      "group": "同题换角色",
+      "text": "苹果用英语怎么说？",
+      "history": [],
+      "expected": [],
+      "role": "鹦鹉多罗",
+      "comparisonId": "role-01",
+      "roleSpecialty": "英语听说与场景对话",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 551,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.999471994599789
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9979528270580293
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.999954255853047
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9995333861495992
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 800,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.87
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.96
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-02-a",
+      "group": "同题换角色",
+      "text": "我想学英语口语了。",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "comparisonId": "role-02",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 372,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9994902921834384
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9870618723896615
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9935968519614158
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9968332114045774
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 518,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.89
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.88
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.88
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.8
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-02-b",
+      "group": "同题换角色",
+      "text": "我想学英语口语了。",
+      "history": [],
+      "expected": [],
+      "role": "鹦鹉多罗",
+      "comparisonId": "role-02",
+      "roleSpecialty": "英语听说与场景对话",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 372,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.9989266910382562
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9987717613543361
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9946155968761063
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9992952265701417
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 520,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.87
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.94
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.92
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-03-a",
+      "group": "同题换角色",
+      "text": "银行为什么愿意给我利息？",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "狐狸皮斯理",
+      "comparisonId": "role-03",
+      "roleSpecialty": "数学、空间与数据",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 382,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.8939308496876524
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9992582094317051
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9946951254712427
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9973886103675736
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 1137,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.88
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.99
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.98
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-03-b",
+      "group": "同题换角色",
+      "text": "银行为什么愿意给我利息？",
+      "history": [],
+      "expected": [],
+      "role": "松鼠利利",
+      "comparisonId": "role-03",
+      "roleSpecialty": "钱、财富、经济与金融",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 454,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.9999008991008421
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9997023673340485
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9989813845003805
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9983805739087809
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 512,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.99
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-04-a",
+      "group": "同题换角色",
+      "text": "算平均数为什么要除以个数？",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "松鼠利利",
+      "comparisonId": "role-04",
+      "roleSpecialty": "钱、财富、经济与金融",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 290,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9912858730835926
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9997133154036708
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.99910577879569
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9997149630645241
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 815,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.98
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-04-b",
+      "group": "同题换角色",
+      "text": "算平均数为什么要除以个数？",
+      "history": [],
+      "expected": [],
+      "role": "狐狸皮斯理",
+      "comparisonId": "role-04",
+      "roleSpecialty": "数学、空间与数据",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 290,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.9999535485553358
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9999417158766212
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9968212137526655
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9969440578305332
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 497,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-05-a",
+      "group": "同题换角色",
+      "text": "为什么猫的眼睛在暗处看起来会发光？",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "兔子罗布",
+      "comparisonId": "role-05",
+      "roleSpecialty": "中文阅读、表达与写作",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 520,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9928245692676658
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9949070568700102
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.999383396062215
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9933106876447331
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 526,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.98
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.98
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-05-b",
+      "group": "同题换角色",
+      "text": "为什么猫的眼睛在暗处看起来会发光？",
+      "history": [],
+      "expected": [],
+      "role": "小鹿小林",
+      "comparisonId": "role-05",
+      "roleSpecialty": "动植物、生命与生态",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 299,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.9998267291014192
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9994665697591384
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9991550010841875
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9952281187042202
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 520,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.99
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.99
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-06-a",
+      "group": "同题换角色",
+      "text": "同一块橡皮泥，做成碗的样子为什么更容易浮起来？",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "小鹿小林",
+      "comparisonId": "role-06",
+      "roleSpecialty": "动植物、生命与生态",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 279,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9883402975742293
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9999217333404685
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9977343257052164
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9976637117829409
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 518,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.99
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-06-b",
+      "group": "同题换角色",
+      "text": "同一块橡皮泥，做成碗的样子为什么更容易浮起来？",
+      "history": [],
+      "expected": [],
+      "role": "鼹鼠莫非",
+      "comparisonId": "role-06",
+      "roleSpecialty": "物理、材料与实验",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 919,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.9999203173945799
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9994482510157223
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9921848855961373
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9978713037647008
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 555,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-07-a",
+      "group": "同题换角色",
+      "text": "跳远之前怎么热身比较合适？",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鼹鼠莫非",
+      "comparisonId": "role-07",
+      "roleSpecialty": "物理、材料与实验",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 419,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.3885878453848644
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9995560440636103
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9964340603285882
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9971612897447623
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 518,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.93
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.98
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-07-b",
+      "group": "同题换角色",
+      "text": "跳远之前怎么热身比较合适？",
+      "history": [],
+      "expected": [],
+      "role": "猩猩山冈",
+      "comparisonId": "role-07",
+      "roleSpecialty": "身体、动作与运动练习",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 385,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.9999690968095079
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9998194555193254
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9984144830019782
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9986724238554209
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 1173,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.99
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-08-a",
+      "group": "同题换角色",
+      "text": "为什么程序里的循环要有停止条件？",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "浣熊康迪",
+      "comparisonId": "role-08",
+      "roleSpecialty": "日常自理、家务与生活安全",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 523,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.999300233377585
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9995375578438422
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9930595430918606
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9977375803611737
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 528,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.99
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-08-b",
+      "group": "同题换角色",
+      "text": "为什么程序里的循环要有停止条件？",
+      "history": [],
+      "expected": [],
+      "role": "仓鼠考特",
+      "comparisonId": "role-08",
+      "roleSpecialty": "编程、数字设备与技术原理",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 402,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.9998935741235285
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9985513141110831
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9979949662427555
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9987096562148414
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 650,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-09-a",
+      "group": "同题换角色",
+      "text": "那这段写完一件事以后，怎么过渡到下一件？",
+      "history": [
+        {
+          "role": "user",
+          "text": "我在写中文作文，前面写学校义卖的事情，下一段想写回家以后。"
+        },
+        {
+          "role": "assistant",
+          "text": "前面和后面是两个时间，可以想想怎么把它们连起来。"
+        }
+      ],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鹦鹉多罗",
+      "comparisonId": "role-09",
+      "roleSpecialty": "英语听说与场景对话",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 398,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9990211168004517
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9996319196629443
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9983805739087809
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9995007362896957
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 576,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.99
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.98
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.98
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-09-b",
+      "group": "同题换角色",
+      "text": "那这段写完一件事以后，怎么过渡到下一件？",
+      "history": [
+        {
+          "role": "user",
+          "text": "我在写中文作文，前面写学校义卖的事情，下一段想写回家以后。"
+        },
+        {
+          "role": "assistant",
+          "text": "前面和后面是两个时间，可以想想怎么把它们连起来。"
+        }
+      ],
+      "expected": [],
+      "role": "兔子罗布",
+      "comparisonId": "role-09",
+      "roleSpecialty": "中文阅读、表达与写作",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 398,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.999678128695579
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9985705894914654
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9984439623681279
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9994691481261231
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 1143,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.99
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.99
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-10-a",
+      "group": "同题换角色",
+      "text": "洗好的校服怎么晾比较不容易皱？",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "鳄鱼爸爸",
+      "comparisonId": "role-10",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 366,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9858561408179144
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9982595623768216
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9988446289835196
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9966985524153985
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 1104,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.98
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.98
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-10-b",
+      "group": "同题换角色",
+      "text": "洗好的校服怎么晾比较不容易皱？",
+      "history": [],
+      "expected": [],
+      "role": "浣熊康迪",
+      "comparisonId": "role-10",
+      "roleSpecialty": "日常自理、家务与生活安全",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 310,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.999919556816762
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9998266905072994
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.998910884119977
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9996178643960079
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 539,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-11-a",
+      "group": "同题换角色",
+      "text": "我紧张的时候肚子发紧，可以怎么让自己放松？",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "水豚蛋蛋",
+      "comparisonId": "role-11",
+      "roleSpecialty": "交朋友、合作与处理人际冲突",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 324,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9502571375279294
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9970813602716783
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9950851740224647
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9951970703869187
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 1344,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.96
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.99
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-11-b",
+      "group": "同题换角色",
+      "text": "我紧张的时候肚子发紧，可以怎么让自己放松？",
+      "history": [],
+      "expected": [],
+      "role": "考拉安仔",
+      "comparisonId": "role-11",
+      "roleSpecialty": "自己的情绪、压力与调节",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 313,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.9997934092496803
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9985760753787206
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9981570476313473
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9991240950912695
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 607,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-12-a",
+      "group": "同题换角色",
+      "text": "朋友一直抢着发言，我想礼貌地请他等我说完，可以怎么开口？",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "考拉安仔",
+      "comparisonId": "role-12",
+      "roleSpecialty": "自己的情绪、压力与调节",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 298,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.98567585135519
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9994991916073688
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9988146873909176
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9992604395572215
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 1185,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.46
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.99
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-12-b",
+      "group": "同题换角色",
+      "text": "朋友一直抢着发言，我想礼貌地请他等我说完，可以怎么开口？",
+      "history": [],
+      "expected": [],
+      "role": "水豚蛋蛋",
+      "comparisonId": "role-12",
+      "roleSpecialty": "交朋友、合作与处理人际冲突",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 277,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.9998585617630349
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9990969230630485
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9953815681063205
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.998714278836284
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 520,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 1
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.99
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 1
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-13-a",
+      "group": "同题换角色",
+      "text": "我怎么改提示词，能让 AI 画同一个角色时衣服不老是变？",
+      "history": [],
+      "expected": [
+        "find_mentor"
+      ],
+      "role": "兔子罗布",
+      "comparisonId": "role-13",
+      "roleSpecialty": "中文阅读、表达与写作",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 343,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.9985877642549691
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.9992029528222115
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9719288922546461
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9962554964797691
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [
+            "find_mentor"
+          ],
+          "latencyMs": 1090,
+          "decisions": {
+            "find_mentor": {
+              "choice": "call",
+              "reason": "outside_specialty",
+              "probability": 0.95
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.99
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.98
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.77
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "id": "role-13-b",
+      "group": "同题换角色",
+      "text": "我怎么改提示词，能让 AI 画同一个角色时衣服不老是变？",
+      "history": [],
+      "expected": [],
+      "role": "鳄鱼爸爸",
+      "comparisonId": "role-13",
+      "roleSpecialty": "AI 使用与 App 引导",
+      "results": {
+        "ark": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 517,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.9985861768835349
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 0.999559868392677
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.9962049596192554
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.9931306043400484
+            }
+          },
+          "responseModel": "doubao-seed-2-1-lite-260915",
+          "uncertain": []
+        },
+        "jev": {
+          "status": "ok",
+          "tools": [],
+          "latencyMs": 537,
+          "decisions": {
+            "find_mentor": {
+              "choice": "skip",
+              "reason": "in_specialty",
+              "probability": 0.99
+            },
+            "calculate": {
+              "choice": "skip",
+              "probability": 1
+            },
+            "recall_memory": {
+              "choice": "skip",
+              "probability": 0.97
+            },
+            "search_web": {
+              "choice": "skip",
+              "probability": 0.93
+            }
+          },
+          "responseModel": "typesafe/jev-1.14-20261014",
+          "uncertain": []
+        }
+      }
+    }
+  ]
+}
