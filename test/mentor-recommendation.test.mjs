@@ -70,7 +70,7 @@ async function demo({ agents = demoAgents, search, clock, failWelcome = false, c
       if (input.questions.calculate) decisions.calculate = { choice: turn.calculateChoice };
       if (input.questions.recall_memory) decisions.recall_memory = { choice: turn.recallChoice };
       if (input.questions.character_media) decisions.character_media = { choice: turn.mediaChoice };
-      return { decisions, ...(turn.mediaDecision ? { mediaDecision: turn.mediaDecision } : {}),
+      return { decisions, ...(turn.toolDecision ? { toolDecision: turn.toolDecision } : {}),
         receipt: { model: 'test-trigger', usage: { input_tokens: 100, output_tokens: 0 } } };
     } },
     provider: { async chat({ messages, tools, toolChoice }) {
@@ -137,7 +137,7 @@ async function demo({ agents = demoAgents, search, clock, failWelcome = false, c
         calculateChoice = 'skip', requestId = crypto.randomUUID(), sessionId = sessions.get(`${childId}:${agentId}`) } = options;
       const scope = { childId, agentId };
       turn = { reply, nativeTool, failContinuation, trigger, triggerReason, searchChoice, searchReason, calculateChoice,
-        mediaChoice: options.mediaChoice, mediaDecision: options.mediaDecision, recallChoice: options.recallChoice ?? 'skip',
+        mediaChoice: options.mediaChoice, toolDecision: options.toolDecision, recallChoice: options.recallChoice ?? 'skip',
         decision: options.decision ?? decision('stay'),
         historyReview: options.historyReview ?? { decision: 'proceed', reason: '可以继续推荐。' },
         events: [], triggerRequests: [], outerRequests: [], classifications: [], historyReviews: [], receipts: [] };
@@ -213,7 +213,7 @@ for (const kind of ['photo', 'video']) {
     const reply = '菜单上每份 37，三份一共 111。';
     const turn = await app.send(text, {
       requestId, triggerReason: 'outside_specialty_research', searchChoice: 'call', calculateChoice: 'call', mediaChoice: 'call',
-      mediaDecision: { status: 'succeeded', anyToolProbability: 0.95, probabilities: [
+      toolDecision: { status: 'succeeded', anyToolProbability: 0.95, probabilities: [
         { name: 'share_photo', probability: succeeds ? 0.9 : 0.5 }, { name: 'share_video', probability: succeeds ? 0.7 : 0.6 },
       ] },
       decision: proactive(duoluo, '我想练英文点餐', 'english-speaking'),
@@ -307,14 +307,14 @@ test('after search, mentor, media, calculation and memory can all enter before a
       characterMedia: { available: kind => kind === 'photo', async generate() { return { ok: true, attachment }; } },
     });
     const off = { status: 'succeeded', anyToolProbability: 0, probabilities: [] };
-    await app.send('我周末练吉他。', { trigger: 'skip', mediaChoice: 'skip', mediaDecision: off, reply: '记住啦。' });
+    await app.send('我周末练吉他。', { trigger: 'skip', mediaChoice: 'skip', toolDecision: off, reply: '记住啦。' });
     await app.newSession();
     const memory = (await app.request('GET', '/api/memory', currentMentor.id)).value.items.find(item => item.summary === '周末练习吉他。');
     assert.ok(memory, 'the original chat must create the memory we will recall');
     const text = '我想练英文点餐。查今天的曲目和票价，算三张多少钱，找位老师，看看活动照片，再帮我回忆吉他具体练什么。';
     const answer = '今天演《春日序曲》，三张票共 111 元。你上次练的是用拨片交替拨弦。';
     const pending = app.send(text, {
-      searchChoice: 'call', calculateChoice: 'call', recallChoice: 'call', mediaChoice: 'call', mediaDecision: { status: 'succeeded', anyToolProbability: 0.95,
+      searchChoice: 'call', calculateChoice: 'call', recallChoice: 'call', mediaChoice: 'call', toolDecision: { status: 'succeeded', anyToolProbability: 0.95,
         probabilities: [{ name: 'share_photo', probability: 0.9 }] },
       async decision(input) {
         await enter('mentor', input.currentSearchEvidence);
@@ -405,7 +405,7 @@ test('a delivered video stays attached when the chat model incorrectly denies se
   });
   const turn = await app.send('给我发段搅拌奶冻的视频。', {
     trigger: 'skip', mediaChoice: 'call',
-    mediaDecision: { status: 'succeeded', anyToolProbability: 0.95, probabilities: [{ name: 'share_video', probability: 0.99 }] },
+    toolDecision: { status: 'succeeded', anyToolProbability: 0.95, probabilities: [{ name: 'share_video', probability: 0.99 }] },
     reply: '这个视频我发不了。不过小勺碰到碗边时会叮一声。',
   });
   assert.equal(generations, 1);
@@ -464,7 +464,7 @@ test('the final media reply matches the attachment that was actually delivered',
     const text = example.text ?? (both ? '发张双子塔照片，再发一段视频。' : kind === 'photo' ? '给我成都天气和双子塔的照片。' : '发一段双子塔的视频。');
     const turn = await app.send(text, { trigger: example.mentor ? 'call' : 'skip',
       ...(example.mentor ? { decision: proactive(xiaolin, '我想学观察云', 'nature-observation') } : {}), mediaChoice: 'call', reply: example.reply,
-      mediaDecision: { status: 'succeeded', anyToolProbability: 0.98, probabilities: [
+      toolDecision: { status: 'succeeded', anyToolProbability: 0.98, probabilities: [
         { name: 'share_photo', probability: kind === 'photo' ? 0.99 : 0.8 }, { name: 'share_video', probability: kind === 'video' ? 0.99 : 0.8 },
       ] } });
     const name = 'share_' + kind;
@@ -487,7 +487,32 @@ test('the final media reply matches the attachment that was actually delivered',
   });
 });
 
-test('the media threshold leaves independently selected mentor, search, calculation and memory tools available', async () => {
+test('the global threshold blocks all categories at or below 65% even with individual calls and high photo scores', async () => {
+  let hasMedia = true;
+  const app = await demo({
+    toolDecision: {}, search: { configured: true, async search() { assert.fail('unexpected search'); } },
+    characterMedia: { available: () => hasMedia, async generate() { assert.fail('unexpected attachment'); } },
+  });
+  for (const [anyToolProbability, mediaAvailable] of [[0.09, true], [0.65, true], [0.65, false]]) {
+    hasMedia = mediaAvailable;
+    const turn = await app.send('帮我看看鳄鱼爸爸擅长什么，查一下植物园票价，算两张多少钱，回忆上次看的花，再给我拍一张。', {
+      agentId: shangang.id, trigger: 'call', searchChoice: 'call', calculateChoice: 'call', recallChoice: 'call', mediaChoice: 'call',
+      toolDecision: { status: 'succeeded', anyToolProbability, probabilities: hasMedia ? [{ name: 'share_photo', probability: 1 }] : [] },
+      reply: '你想先聊哪一件？',
+    });
+    assert.equal(turn.triggerRequests.length, 1);
+    assert.equal(turn.triggerRequests[0].questions.any_tool.type, 'noul');
+    assert.equal(Boolean(turn.triggerRequests[0].questions.character_media), hasMedia);
+    assert.equal(turn.context.toolDecision.scope, 'all');
+    assert.deepEqual(turn.context.toolDecision.selectedTools, []);
+    assert.deepEqual(turn.context.toolCalls, []);
+    assert.deepEqual(turn.classifications, []);
+    assert.deepEqual(turn.outerRequests.map(request => request.tools), [[]]);
+    assert.ok(!turn.events.some(event => event.type === 'character_media' || event.type === 'mentor_recommendation'));
+  }
+});
+
+test('above the global threshold each non-media tool can run while the photo and video choices stay closed', async () => {
   const listing = { title: '植物园票价', url: 'https://example.test/garden', snippet: '成人票每张 8 元。' };
   let searches = 0;
   const app = await demo({
@@ -496,9 +521,9 @@ test('the media threshold leaves independently selected mentor, search, calculat
     toolDecision: {},
   });
   const args = { search_web: { query: '植物园票价' }, calculate: { expression: '8 * 2' }, recall_memory: { query: '上次看的花' } };
-  const turn = await app.send('查查植物园两张成人票一共多少钱，看看我上次看过什么花，再查一下鳄鱼爸爸擅长什么。能发照片也来一张。', {
-    agentId: shangang.id, trigger: 'call', searchChoice: 'call', calculateChoice: 'call', recallChoice: 'call', mediaChoice: 'call',
-    mediaDecision: { status: 'succeeded', anyToolProbability: 0.65, probabilities: [{ name: 'share_photo', probability: 1 }] },
+  const turn = await app.send('查查植物园两张成人票一共多少钱，看看我上次看过什么花，再查一下鳄鱼爸爸擅长什么。只要文字。', {
+    agentId: shangang.id, trigger: 'call', searchChoice: 'call', calculateChoice: 'call', recallChoice: 'call', mediaChoice: 'skip',
+    toolDecision: { status: 'succeeded', anyToolProbability: 0.6501, probabilities: [{ name: 'share_photo', probability: 1 }] },
     decision: decision('directory', { mentorIds: [currentMentor.id] }),
     nativeTool(choice) {
       const name = choice?.function.name;
@@ -512,15 +537,15 @@ test('the media threshold leaves independently selected mentor, search, calculat
   assert.equal(turn.context.toolCalls[0]?.name, 'search_web');
   assert.deepEqual(turn.context.toolCalls.map(call => call.name).sort(), ['calculate', 'find_mentor', 'recall_memory', 'search_web']);
   assert.deepEqual(turn.context.toolDecision.selectedTools, ['search_web', 'calculate', 'recall_memory', 'find_mentor']);
-  assert.equal(turn.context.toolDecision.scope, 'media');
-  assert.equal(turn.context.toolDecision.routes.character_media.choice, 'call');
+  assert.equal(turn.context.toolDecision.scope, 'all');
+  assert.equal(turn.context.toolDecision.routes.character_media.choice, 'skip');
   assert.equal(turn.context.toolDecision.selectedTool, null);
   assert.equal(turn.context.modelRequests.some(request => request.purpose === 'character-media-plan'), false);
   assert.deepEqual(offers(turn), []);
 });
 
-test('a 9% score for media preserves mentor profile lookups, conversation and explicit referrals from Shangang', async t => {
-  const low = { status: 'succeeded', anyToolProbability: 0.09, probabilities: [
+test('independent mentor choices above the global threshold distinguish profiles, comments and requests to switch', async t => {
+  const high = { status: 'succeeded', anyToolProbability: 0.91, probabilities: [
     { name: 'share_photo', probability: 0.02 }, { name: 'share_video', probability: 0.01 },
   ] };
   const cases = [
@@ -536,10 +561,10 @@ test('a 9% score for media preserves mentor profile lookups, conversation and ex
       : decision('directory', { mentorIds: target ? [target.id] : [] });
     const reply = target ? target.name + '擅长' + target.metadata.mentor.specialty + '。' : skip ? '你喜欢他哪一点？' : '咱们来聊聊。';
     const turn = await app.send(text, { agentId: shangang.id, trigger: skip ? 'skip' : 'call',
-      triggerReason: skip ? 'ordinary_chat_or_utility' : 'mentor_intent', mediaChoice: 'skip', mediaDecision: low, decision: result, reply });
+      triggerReason: skip ? 'ordinary_chat_or_utility' : 'mentor_intent', mediaChoice: 'skip', toolDecision: high, decision: result, reply });
     assert.equal(turn.triggerRequests.length, 1);
     assert.ok(turn.triggerRequests[0].questions.find_mentor);
-    assert.equal(turn.context.toolDecision.scope, 'media');
+    assert.equal(turn.context.toolDecision.scope, 'all');
     assert.equal(turn.context.toolDecision.routes.find_mentor.choice, skip ? 'skip' : 'call');
     assert.deepEqual(turn.context.toolDecision.selectedTools, skip ? [] : ['find_mentor']);
     assert.deepEqual(turn.context.toolCalls.map(call => call.name), skip ? [] : ['find_mentor']);
@@ -555,20 +580,19 @@ test('a 9% score for media preserves mentor profile lookups, conversation and ex
   });
 });
 
-test('an unavailable media score preserves a valid mentor choice and selects no attachment', async () => {
+test('a valid global score with no media format scores allows a mentor lookup but no attachment', async () => {
   const app = await demo({ toolDecision: {}, characterMedia: { available: () => true } });
-  for (const mediaDecision of [undefined, { status: 'unavailable', reason: 'response' }]) {
-    const turn = await app.send('查一下布爸的专长，再给我发张花的照片。', {
-      agentId: shangang.id, trigger: 'call', mediaChoice: 'call', mediaDecision,
-      decision: decision('directory', { mentorIds: [currentMentor.id] }), reply: '布爸能聊 AI 和学习方法。',
-    });
-    assert.equal(turn.context.toolDecision.status, 'unavailable');
-    assert.equal(turn.context.toolDecision.mode, 'orchestrated');
-    assert.deepEqual(turn.context.toolDecision.selectedTools, ['find_mentor']);
-    assert.deepEqual(turn.context.toolCalls.map(call => call.name), ['find_mentor']);
-    assert.deepEqual(turn.receipts[0].mentors.map(mentor => mentor.id), [currentMentor.id]);
-    assert.ok(!turn.events.some(event => event.type === 'character_media'));
-  }
+  const turn = await app.send('查一下布爸的专长，再给我发张花的照片。', {
+    agentId: shangang.id, trigger: 'call', mediaChoice: 'call',
+    toolDecision: { status: 'succeeded', anyToolProbability: 0.91, probabilities: [] },
+    decision: decision('directory', { mentorIds: [currentMentor.id] }), reply: '布爸能聊 AI 和学习方法。',
+  });
+  assert.equal(turn.context.toolDecision.status, 'succeeded');
+  assert.equal(turn.context.toolDecision.mode, 'orchestrated');
+  assert.deepEqual(turn.context.toolDecision.selectedTools, ['find_mentor']);
+  assert.deepEqual(turn.context.toolCalls.map(call => call.name), ['find_mentor']);
+  assert.deepEqual(turn.receipts[0].mentors.map(mentor => mentor.id), [currentMentor.id]);
+  assert.ok(!turn.events.some(event => event.type === 'character_media'));
 });
 
 test('the trigger can route the same topic share differently for two specialties', async () => {

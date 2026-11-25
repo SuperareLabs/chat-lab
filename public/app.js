@@ -865,36 +865,54 @@ function toolCallSection(calls, open = false) {
 
 function routedToolDecisionRows(decision, percent) {
   const labels = { search_web: '联网搜索', find_mentor: '查找导师', calculate: '计算', recall_memory: '记忆查询',
-    character_media: '影像意向', share_photo: '照片', share_video: '视频' };
+    read_character_reference: '角色资料', character_media: '影像意向', share_photo: '照片', share_video: '视频' };
   const rows = [];
-  if (Array.isArray(decision.selectedTools)) {
-    rows.push(['计划调用', decision.selectedTools.map(name => labels[name] ?? name).join('、') || '无']);
+  const allTools = decision.scope === 'all';
+  const score = decision.anyToolProbability;
+  const threshold = decision.threshold;
+  const gate = Number.isFinite(threshold) ? `（须超过 ${percent(threshold)}）` : '';
+  const scored = Number.isFinite(score) && decision.status === 'succeeded';
+  let emptyPlan = '无';
+  if (allTools) {
+    let displayedScore = decision.status === 'running' ? '判断中' : '未取得评分';
+    if (scored) {
+      displayedScore = percent(score);
+      if (score !== threshold && displayedScore === percent(threshold)) {
+        displayedScore = (score > threshold ? '略高于 ' : '略低于 ') + displayedScore;
+      }
+      if (Number.isFinite(threshold) && score <= threshold) emptyPlan = '无（总分未过门槛）';
+    } else if (decision.status === 'unavailable') emptyPlan = '无（缺少总分）';
+    rows.push(['本轮工具总分', displayedScore + gate]);
   }
-  for (const name of ['search_web', 'find_mentor', 'calculate', 'recall_memory', 'character_media']) {
+  if (Array.isArray(decision.selectedTools)) {
+    rows.push(['计划调用', decision.selectedTools.map(name => labels[name] ?? name).join('、') || emptyPlan]);
+  } else if (allTools) rows.push(['计划调用', decision.status === 'running' ? '判断中' : '未记录']);
+  const routeNames = ['search_web', 'find_mentor', 'calculate', 'recall_memory', 'character_media'];
+  if (allTools && decision.routes?.read_character_reference) routeNames.push('read_character_reference');
+  for (const name of routeNames) {
     if (name === 'character_media' && decision.mediaAvailable === false) continue;
     const route = decision.routes?.[name];
-    const choices = { call: name === 'character_media' ? '需要影像' : '调用', skip: '跳过', uncertain: '待确认' };
+    const choices = { call: name === 'character_media' ? '需要影像' : (allTools ? '建议调用' : '调用'),
+      skip: allTools ? '建议跳过' : '跳过', uncertain: '待确认' };
     const parts = [choices[route?.choice] ?? '未评估'];
     if (name === 'search_web' && route?.reason === 'outside_specialty_research') parts.push('为导师查证补充搜索');
     if (Number.isFinite(route?.callProbability)) parts.push('调用概率 ' + percent(route.callProbability));
     rows.push([labels[name], parts.join(' · ')]);
   }
-  if (decision.mediaAvailable !== false && (Number.isFinite(decision.anyToolProbability) || Number.isFinite(decision.threshold))) {
-    const score = Number.isFinite(decision.anyToolProbability) ? percent(decision.anyToolProbability) : '未取得评分';
-    const gate = Number.isFinite(decision.threshold) ? `（须超过 ${percent(decision.threshold)}）` : '';
-    rows.push(['影像门槛', score + gate]);
+  if (!allTools && decision.mediaAvailable !== false && (Number.isFinite(score) || Number.isFinite(threshold))) {
+    rows.push(['影像门槛', (Number.isFinite(score) ? percent(score) : '未取得评分') + gate]);
   }
   const formats = (Array.isArray(decision.probabilities) ? decision.probabilities : [])
     .filter(item => ['share_photo', 'share_video'].includes(item?.name) && Number.isFinite(item.probability))
     .map(({ name, probability }) => labels[name] + ' ' + percent(probability));
-  if (formats.length) rows.push(['形式匹配度', formats.join('、')]);
+  if (formats.length) rows.push([allTools ? '影像形式匹配度' : '形式匹配度', formats.join('、')]);
   return rows;
 }
 
 function toolDecisionSection(decision, open = true) {
   const percent = value => Number.isFinite(value)
     ? value.toLocaleString('zh-CN', { style: 'percent', maximumFractionDigits: 1 }) : '—';
-  const scoped = decision.scope === 'media';
+  const scoped = decision.scope === 'media' || decision.scope === 'all';
   const metadata = [
     ['对话上下文', Number.isInteger(decision.turns) ? `最近 ${decision.turns} 轮（含本轮）` : null],
     ['模型', decision.resolvedModel || decision.model],
@@ -921,7 +939,8 @@ function toolDecisionSection(decision, open = true) {
   else if (decision.status !== 'succeeded') {
     const reasons = { credential: '无法从 Service Clan 获取 Jev 连接', timeout: 'Jev 判断超时',
       relay: '成都 → 新加坡隧道不可用，已跳过工具判断',
-      provider: 'OpenRouter 请求失败', response: scoped ? '影像评分未完整返回' : 'Jev 未返回完整的工具概率' };
+      provider: 'OpenRouter 请求失败', response: decision.scope === 'all' ? 'Jev 未返回本轮工具总分'
+        : scoped ? '影像评分未完整返回' : 'Jev 未返回完整的工具概率' };
     const reason = reasons[decision.reason] || '暂未取得工具判断结果';
     content.push(node('p', 'quiet', decision.httpStatus ? `${reason}（HTTP ${decision.httpStatus}）` : reason));
   }

@@ -257,7 +257,7 @@ test('a scripted flower photo can repair its plan once before submitting it for 
       defaultChildren: [{ name: '测试访客', age: 22, interests: [] }],
       model: { name: 'photo-test', configured: true }, memoryModel: { configured: false },
       toolDecision: {}, mentorTrigger: { model: 'test-trigger', async decide() {
-        return { decisions: { character_media: { choice: 'call' } }, mediaDecision: { status: 'succeeded',
+        return { decisions: { character_media: { choice: 'call' } }, toolDecision: { status: 'succeeded',
           anyToolProbability: 0.99, probabilities: [{ name: 'share_photo', probability: 0.98 }] } };
       } },
       provider: { async chat({ messages }) {

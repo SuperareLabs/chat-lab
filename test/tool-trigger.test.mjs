@@ -13,7 +13,7 @@ const categoryAnswers = {
   calculate: { type: 'choice', choice: 'skip' },
 };
 
-test('one Jev request returns independent routing choices and ranks only available media formats', async () => {
+test('one Jev request shares tool rules for the total score and returns choices for dispatch', async () => {
   const requests = [];
   const client = createToolDecisionClient({ model: 'jev-test', url: 'https://example.test/decisions' }, 'test', {
     fetchImpl: async (_url, request) => {
@@ -21,50 +21,72 @@ test('one Jev request returns independent routing choices and ranks only availab
       requests.push(body);
       const answers = { ...categoryAnswers, recall_memory: { type: 'choice', choice: 'call', probabilities: { call: 0.86 } },
         character_media: { type: 'choice', choice: 'call' },
-        any_media: { type: 'noul', noul: 0.97 }, share_photo: { type: 'noul', noul: 0.42 }, share_video: { type: 'noul', noul: 0.1 } };
+        any_tool: { type: 'noul', noul: 0.97 }, share_photo: { type: 'noul', noul: 0.42 }, share_video: { type: 'noul', noul: 0.1 } };
       return Response.json({ model: 'jev-test', answers, usage: { input_tokens: 50 } });
     },
   });
-  const result = await client.decide(buildToolTriggerRequest({ ...input, includeMediaDecision: true }));
+  const result = await client.decide(buildToolTriggerRequest({ ...input, includeToolDecision: true }));
   assert.equal(requests.length, 1);
   assert.deepEqual(Object.fromEntries(Object.entries(requests[0].questions).map(([id, q]) => [id, q.type])), {
     find_mentor: 'choice', search_web: 'choice', calculate: 'choice',
-    recall_memory: 'choice', character_media: 'choice', any_media: 'noul', share_photo: 'noul', share_video: 'noul',
+    recall_memory: 'choice', character_media: 'choice', any_tool: 'noul', share_photo: 'noul', share_video: 'noul',
   });
+  const questions = requests[0].questions;
+  for (const name of ['find_mentor', 'search_web', 'calculate', 'recall_memory', 'character_media']) {
+    assert.ok(questions.any_tool.instructions.includes(questions[name].instructions));
+    for (const text of Object.values(questions[name].criteria)) assert.ok(questions.any_tool.instructions.includes(text));
+  }
+  for (const name of ['share_photo', 'share_video']) assert.ok(questions.any_tool.instructions.includes(questions[name].instructions));
   assert.deepEqual(result.decisions, { find_mentor: { choice: 'call', reason: 'outside_specialty_research' },
     search_web: { choice: 'skip', reason: 'explicit_no_search' }, calculate: { choice: 'skip' },
     recall_memory: { choice: 'call', probability: 0.86, callProbability: 0.86 }, character_media: { choice: 'call' } });
-  assert.deepEqual(result.mediaDecision, { status: 'succeeded', anyToolProbability: 0.97,
+  assert.deepEqual(result.toolDecision, { status: 'succeeded', anyToolProbability: 0.97,
     probabilities: [{ name: 'share_photo', probability: 0.42 }, { name: 'share_video', probability: 0.1 }] });
   assert.deepEqual(result.receipt, { model: 'jev-test', usage: { input_tokens: 50 } });
 });
 
 test('media and memory questions follow enabled capabilities and legacy callers keep choice-only responses', async () => {
-  const requestFor = availableTools => buildToolTriggerRequest({ ...input, availableTools, includeMediaDecision: true });
-  assert.deepEqual(Object.keys(requestFor(['share_video']).questions), ['character_media', 'any_media', 'share_video']);
+  const requestFor = availableTools => buildToolTriggerRequest({ ...input, availableTools, includeToolDecision: true });
+  assert.deepEqual(Object.keys(requestFor(['share_video']).questions), ['character_media', 'any_tool', 'share_video']);
   const memoryOnly = requestFor(['recall_memory']).questions;
-  assert.deepEqual(Object.keys(memoryOnly), ['recall_memory']);
+  assert.deepEqual(Object.keys(memoryOnly), ['recall_memory', 'any_tool']);
   assert.deepEqual(Object.keys(memoryOnly.recall_memory.criteria), ['call', 'skip', 'uncertain']);
-  assert.deepEqual(Object.keys(requestFor(['get_memory_detail']).questions), []);
+  assert.deepEqual(Object.keys(requestFor(['get_memory_detail']).questions), ['any_tool']);
+  const referenceOnly = requestFor(['read_character_reference']).questions;
+  assert.deepEqual(Object.keys(referenceOnly), ['read_character_reference', 'any_tool']);
+  assert.ok(referenceOnly.any_tool.instructions.includes(referenceOnly.read_character_reference.criteria.call));
+  assert.ok(!memoryOnly.any_tool.instructions.includes('发一段你做热身'));
   const legacy = buildToolTriggerRequest(input);
   assert.deepEqual(Object.keys(legacy.questions), ['find_mentor', 'search_web', 'calculate']);
   const client = createToolDecisionClient({ model: 'jev-test', url: 'https://example.test/decisions' }, 'test', {
     fetchImpl: async () => Response.json({ answers: categoryAnswers }),
   });
   const result = await client.decide(legacy);
-  assert.equal(Object.hasOwn(result, 'mediaDecision'), false);
+  assert.equal(Object.hasOwn(result, 'toolDecision'), false);
   assert.deepEqual(result.decisions.search_web, { choice: 'skip', reason: 'explicit_no_search' });
 });
 
-test('malformed probability cannot enable media or erase a search veto', async () => {
+test('malformed media fit cannot invalidate the total score or erase a search veto', async () => {
   const client = createToolDecisionClient({ model: 'jev-test', url: 'https://example.test/decisions' }, 'test', {
-    fetchImpl: async () => Response.json({ answers: { ...categoryAnswers, any_media: { type: 'noul', noul: 1 },
+    fetchImpl: async () => Response.json({ answers: { ...categoryAnswers, any_tool: { type: 'noul', noul: 1 },
       character_media: { type: 'choice', choice: 'call' }, share_photo: { type: 'noul', noul: 1.3 } } }),
   });
-  const result = await client.decide(buildToolTriggerRequest({ ...input, includeMediaDecision: true,
+  const result = await client.decide(buildToolTriggerRequest({ ...input, includeToolDecision: true,
     availableTools: ['find_mentor', 'search_web', 'share_photo'] }));
-  assert.deepEqual(result.mediaDecision, { status: 'unavailable', reason: 'response' });
+  assert.deepEqual(result.toolDecision, { status: 'succeeded', anyToolProbability: 1, probabilities: [] });
   assert.deepEqual(result.decisions.search_web, { choice: 'skip', reason: 'explicit_no_search' });
+});
+
+test('a missing or invalid total cannot be supplied by a high format score', async () => {
+  for (const score of [undefined, 1.3]) {
+    const client = createToolDecisionClient({ model: 'jev-test', url: 'https://example.test/decisions' }, 'test', {
+      fetchImpl: async () => Response.json({ answers: { character_media: { type: 'choice', choice: 'call' },
+        any_tool: { type: 'noul', noul: score }, share_photo: { type: 'noul', noul: 1 } } }),
+    });
+    const result = await client.decide(buildToolTriggerRequest({ ...input, includeToolDecision: true, availableTools: ['share_photo'] }));
+    assert.deepEqual(result.toolDecision, { status: 'unavailable', reason: 'response' });
+    assert.equal(result.decisions.character_media.choice, 'call');
+  }
 });
 
 test('tool call scores aggregate all calling outcomes and keep the search score after a research override', async () => {
