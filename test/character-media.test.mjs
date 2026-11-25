@@ -181,6 +181,18 @@ test('Share Video validates one beat and keeps the landscape voice disabled', ()
   assert.equal(readShareVideoPlan(args, new Set()), null);
 });
 
+test('POV video keeps its scene when a model wraps the sound and names the limb as an asset', () => {
+  const args = normalizeShareVideoArguments({ should_send_video: true, template_id: 'VID_POV_INTERACT',
+    primary_subject: { asset_id: null, action_or_state: 'a wooden spoon slowly stirring milk pudding in a glass bowl' },
+    secondary_subject: { asset_id: 'character-variant', action_or_state: 'a green-sleeved hand resting at the bowl edge', framing_mode: 'partial_limb_only' },
+    environment_and_sound: { asset_id: null, environment_and_sound: 'glass bowl on wooden table, soft wet spoon swirls' },
+  });
+  const plan = readShareVideoPlan(args, new Set());
+  assert.equal(plan.primary.text, 'wooden spoon slowly stirring milk pudding in glass bowl');
+  assert.equal(plan.secondary.id, 'character');
+  assert.equal(plan.environment, 'glass bowl on wooden table, soft wet spoon swirls');
+});
+
 test('Share Video normalizes a wrapped scene and derives prop framing from the shot', () => {
   const args = {
     ...videoArgs('VID_SELFIE_TALK', '这次再发不出，就真怪它了'),
