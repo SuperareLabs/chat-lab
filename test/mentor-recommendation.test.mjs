@@ -270,6 +270,30 @@ for (const kind of ['photo', 'video']) {
   });
 }
 
+test('a delivered video stays attached when the chat model incorrectly denies sending it', async () => {
+  const attachment = { kind: 'video', id: 'a'.repeat(48) };
+  let generations = 0;
+  const app = await demo({
+    toolDecision: {},
+    characterMedia: { available: kind => kind === 'video', async generate() {
+      generations++;
+      return { ok: true, attachment };
+    } },
+    mediaPlan: () => ({ should_send_video: true, template_id: 'VID_POV_INTERACT',
+      primary_subject: { asset_id: null, action_or_state: 'a wooden spoon stirring pudding' },
+      environment_and_sound: 'warm kitchen light, a quiet spoon clink', spoken_line: null }),
+  });
+  const turn = await app.send('给我发段搅拌奶冻的视频。', {
+    trigger: 'skip', mediaChoice: 'call',
+    mediaDecision: { status: 'succeeded', anyToolProbability: 0.95, probabilities: [{ name: 'share_video', probability: 0.99 }] },
+    reply: '这个视频我发不了。不过小勺碰到碗边时会叮一声。',
+  });
+  assert.equal(generations, 1);
+  assert.equal(turn.outerRequests.length, 1);
+  assert.deepEqual(parts(turn), ['这段视频给你。', '不过小勺碰到碗边时会叮一声。']);
+  assert.deepEqual(turn.events.find(event => event.type === 'character_media')?.attachment, attachment);
+});
+
 test('the global probability must exceed 65% before any selected tool runs', async () => {
   let separateDecisions = 0;
   const app = await demo({

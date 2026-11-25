@@ -38,6 +38,8 @@ ChatLab 通过本机 Service Clan 的 `gpu-qwen-image-21-app-production` 调用 
 
 ## 本地启动
 
+免登录本机 Demo 支持直接设置 `QWEN_APP_TOKEN_FILE` 和 `CHAT_PIKA_API_KEY_FILE`，并用 `CHAT_CHARACTER_MEDIA_DIR` 指定本机媒体目录。两个凭据文件使用项目外的绝对路径，权限为 `0600` 或 `0400`。这套配置将 Qwen 请求发往固定生产网关，Pika 请求发往官方 API。视频后处理需要 FFmpeg。未配置 Service Clan 时，视频由 Pika 处理原生声音。
+
 导师 Demo 的搜索、推荐与媒体走同一轮工具判断，具体顺序见[导师推荐 Demo](mentor-recommendation-demo.md)。下面介绍单独启用媒体的本机工作区。
 
 在免登录、仅监听 `127.0.0.1` 的浏览器工作区，设置 `CHAT_SERVICE_CLAN_TOKEN_FILE` 为本机 Service Clan 的 `.local/access-token` 绝对路径，设置 `CHAT_CHARACTER_MEDIA_DIR` 为专用本地媒体目录。照片需要 Service Clan 中的 `gpu-qwen-image-21-app-production` 和对应的 `QWEN_APP_API_TOKEN`。视频需要 `pika-h3-flex` 和 PATH 中的 FFmpeg。固定音色的有声视频另需 `volc-icl20-sse`。设定图来自应用内已登记的角色素材，SVG 需要同名 PNG 参考图。影像与照片的场景说明保存在媒体目录，浏览器聊天快照只保存引用。照片需组合多张参考时也使用 FFmpeg。若 Node 启用了环境代理，确保 `localhost,127.0.0.1` 绕过代理。

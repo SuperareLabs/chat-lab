@@ -197,11 +197,14 @@ export function createLabServer(options = {}) {
     model: config.model.name, agents: defaultAgents, children: config.defaultChildren, sharedPrompts, search: config.search,
   });
   const localBrowserMode = browserMode && config.localNoAuth && config.host === '127.0.0.1';
-  const localMedia = localBrowserMode && !config.characterMedia && config.serviceClanTokenFile && config.characterMediaDirectory;
-  const relay = localMedia || (localBrowserMode && config.jevRelay && config.serviceClanTokenFile && !config.toolDecision)
+  const localMedia = localBrowserMode && !config.characterMedia && config.characterMediaDirectory &&
+    (config.serviceClanTokenFile || config.qwenTokenFile || config.pikaKeyFile);
+  const relay = (localMedia && config.serviceClanTokenFile) ||
+    (localBrowserMode && config.jevRelay && config.serviceClanTokenFile && !config.toolDecision)
     ? createJevRelay({ tokenFile: config.serviceClanTokenFile }) : null;
   const characterMedia = localBrowserMode
     ? config.characterMedia ?? (localMedia ? createCharacterMedia({ tokenFile: config.serviceClanTokenFile,
+      qwenTokenFile: config.qwenTokenFile, pikaKeyFile: config.pikaKeyFile,
       directory: config.characterMediaDirectory, pikaRelay: relay }) : null)
     : null;
   const toolDecision = localBrowserMode

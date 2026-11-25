@@ -46,6 +46,68 @@ function mockPikaRelay(t, respond) {
   } };
 }
 
+test('direct Qwen and Pika credentials work without Service Clan and stay on their API origins', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'chatlab-direct-media-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const qwenTokenFile = join(directory, 'qwen-token'), pikaKeyFile = join(directory, 'pika-key');
+  await writeFile(qwenTokenFile, 'fake-image-token\n', { mode: 0o600 });
+  await writeFile(pikaKeyFile, 'fake-video-key\n', { mode: 0o600 });
+  const png = await readFile(new URL('../public/assets/lin-wanqing-avatar.png', import.meta.url));
+  const calls = [];
+  let settled = false;
+  t.mock.method(globalThis, 'fetch', async (target, options) => {
+    const { origin, pathname } = new URL(target);
+    const headers = new Headers(options.headers);
+    calls.push(pathname);
+    assert.equal(options.redirect, 'error');
+    assert.equal(headers.get('Authorization'), origin === 'https://8.137.116.27:5889' ? 'Bearer fake-image-token' : null);
+    assert.equal(headers.get('X-API-Key'), origin === 'https://api.dev.pika.art' ? 'fake-video-key' : null);
+    assert.equal(headers.has('X-Service-Clan-Token'), false);
+    switch (origin + pathname) {
+      case 'https://8.137.116.27:5889/api/v2/jobs': return Response.json({ job_id: 'photo' });
+      case 'https://8.137.116.27:5889/api/v2/jobs/photo': return Response.json({ status: 'succeeded' });
+      case 'https://8.137.116.27:5889/api/v2/jobs/photo/outputs': return Response.json({ items: [
+        { output_type: 'image', output_id: 'image', delivery_state: 'ready', media_type: 'image/png' },
+      ] });
+      case 'https://8.137.116.27:5889/api/v2/jobs/photo/outputs/image/content': return new Response(png);
+      case 'https://api.dev.pika.art/v1/media/pika/pika-h3-flex/text-to-video': return Response.json({ id: 'clip' });
+      case 'https://api.dev.pika.art/v1/media/jobs/clip': return Response.json({ status: 'completed',
+        billing: settled ? { state: 'settled', charge_micro_usd: 17_000 } : null,
+        output: { video: { url: 'https://cdn.pika.art/clip.mp4' } } });
+      case 'https://cdn.pika.art/clip.mp4': return new Response(null, { status: 503 });
+      default: throw new Error('Unexpected direct media URL');
+    }
+  });
+  const images = createCharacterMedia({ qwenTokenFile, directory });
+  const videos = createCharacterMedia({ pikaKeyFile, directory });
+  await Promise.all([images.refresh(), videos.refresh()]);
+  assert.equal(images.available('photo', role), true);
+  assert.equal(images.available('video', role), false);
+  assert.equal(videos.available('photo', role), false);
+  assert.equal(videos.available('video', role), true);
+  const signal = new AbortController().signal;
+  const photoPlan = readSharePhotoPlan(photoArgs('SHOT_POV_SUBJECT', 'a cake'), new Set());
+  const photo = await images.generate('photo', { agent: role, photoPlan, runId: 'direct-photo', signal });
+  assert.equal(photo.attachment?.kind, 'photo', photo.error);
+  assert.deepEqual(await readFile((await images.asset(photo.attachment.id, 'photo')).file), png);
+
+  const receipts = [];
+  const video = await videos.generate('video', { agent: role, videoPlan: videoPlan('VID_AMBIENT_LOOP'),
+    runId: 'direct-video', signal, onUsage: entry => receipts.push(entry) });
+  assert.deepEqual(video, { ok: false, error: 'Media service HTTP 503' });
+  assert.equal(calls.at(-1), '/clip.mp4');
+  const { receiptProof, state } = receipts.at(-1).mediaBilling;
+  assert.equal(state, 'pending');
+  assert.match(receiptProof, /^[a-f0-9]{64}$/);
+  const before = calls.length;
+  await videos.readVideoBilling('another-job', receiptProof, signal);
+  assert.equal(calls.length, before, 'a proof only authorizes the job that produced it');
+  settled = true;
+  assert.deepEqual(await videos.readVideoBilling('clip', receiptProof, signal), { state: 'settled', actualMicroUsd: 17_000 });
+  assert.deepEqual(calls.slice(before), ['/v1/media/jobs/clip']);
+  assert.equal(calls.some(path => path.startsWith('/api/services/')), false);
+});
+
 test('an unavailable Pika relay fails before making any network request', async t => {
   const fetch = t.mock.method(globalThis, 'fetch', () => assert.fail('Unexpected normal fetch'));
   const pikaFetch = t.mock.fn(() => assert.fail('Unexpected tunnel request'));
