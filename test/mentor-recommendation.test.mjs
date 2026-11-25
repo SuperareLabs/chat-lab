@@ -413,6 +413,66 @@ test('a delivered video stays attached when the chat model incorrectly denies se
   assert.deepEqual(turn.events.find(event => event.type === 'character_media')?.attachment, attachment);
 });
 
+test('the final media reply matches the attachment that was actually delivered', async t => {
+  const weather = '成都今天晴，午后15℃左右，夜里转多云9℃，空气质量优，下午西边视野好还能望见雪山。';
+  const source = '这张是生成的双塔示意图，不能用来确认实景。';
+  const verification = '如果想确认实景，可以查查成都双子塔的官方实拍图。';
+  const tower = '双塔的灯光沿着楼身亮起来。';
+  const cases = [
+    { title: 'the delivered Chengdu photo keeps the weather and the source of the illustration', kind: 'photo',
+      reply: [weather, '双子塔照片这就得看系统能不能给我了——布爸没拍成都的相机，先跟你说实话。',
+        '不过那张塔的样子我倒是能陪你查查长啥样，要吗？', source, verification],
+      kept: [weather, source, verification], rejected: /看系统|能不能给我|没拍成都的相机|不过那张塔的样子我倒是能陪你查查长啥样/u },
+    { title: 'a delivered video cannot be described as impossible to make', kind: 'video',
+      reply: [tower, '那条视频我这边做不出来，抱歉。'], kept: [tower], rejected: /做不出来|发不出来|抱歉/u },
+    { title: 'a failed photo cannot be announced as delivered', kind: 'photo', failed: true,
+      reply: ['发给你了。', weather], kept: [weather], rejected: /发给你了|照片给你|发过去了/u },
+    { title: 'a failed photo gets a truthful fallback when nothing else was said', kind: 'photo', failed: true,
+      reply: ['照片发给你了。'], kept: ['这次没能发出照片。'], rejected: /发给你了|照片给你|发过去了/u },
+    { title: 'choosing the photo does not mark an unattempted video as failed', kind: 'photo', both: true,
+      reply: ['这张照片给你。', '那条视频我这边做不出来，抱歉。', tower], kept: [tower],
+      rejected: /做不出|发不了|没能发|没发成|没发出|失败|抱歉/u },
+    { title: 'choosing the video does not mark an unattempted photo as failed', kind: 'video', both: true,
+      reply: ['这段视频给你。', '照片这次发不了。', tower], kept: [tower],
+      rejected: /做不出|发不了|没能发|没发成|没发出|失败|抱歉/u },
+  ];
+  for (const example of cases) await t.test(example.title, async () => {
+    const { kind, failed, both } = example;
+    const attachment = { kind, id: 'c'.repeat(48) };
+    const generated = [];
+    const app = await demo({
+      toolDecision: {},
+      characterMedia: { available: () => true, async generate(selected) {
+        generated.push(selected);
+        return failed ? { ok: false, error: 'synthetic image provider failure' } : { ok: true, attachment };
+      } },
+      mediaPlan: () => kind === 'photo' ? { should_send_image: true, template_id: 'SHOT_POV_SUBJECT',
+        primary_subject: { asset_id: null, action_or_state: 'the illuminated Chengdu twin towers' }, environment_context: 'clear evening sky' }
+        : { should_send_video: true, template_id: 'VID_POV_INTERACT',
+          primary_subject: { asset_id: null, action_or_state: 'light moving up the twin towers' }, environment_and_sound: 'night wind', spoken_line: null },
+    });
+    const text = both ? '发张双子塔照片，再发一段视频。' : kind === 'photo' ? '给我成都天气和双子塔的照片。' : '发一段双子塔的视频。';
+    const turn = await app.send(text, { trigger: 'skip', mediaChoice: 'call', reply: example.reply,
+      mediaDecision: { status: 'succeeded', anyToolProbability: 0.98, probabilities: [
+        { name: 'share_photo', probability: kind === 'photo' ? 0.99 : 0.8 }, { name: 'share_video', probability: kind === 'video' ? 0.99 : 0.8 },
+      ] } });
+    const name = 'share_' + kind;
+    assert.deepEqual(generated, [kind]);
+    assert.equal(turn.triggerRequests.length, 1);
+    assert.equal(turn.outerRequests.length, 1);
+    assert.equal(turn.context.modelRequests.filter(request => request.purpose === 'character-media-plan').length, 1);
+    assert.deepEqual(turn.context.toolCalls.map(call => call.name), [name]);
+    assert.deepEqual(turn.snapshot.tables.usage_records.filter(row => row.run_id === turn.run.id && row.kind === 'character_media')
+      .map(row => row.tool_name), [name]);
+    assert.deepEqual(turn.events.filter(event => event.type === 'character_media').map(event => event.attachment), failed ? [] : [attachment]);
+    const output = parts(turn).join('\n\n');
+    assert.equal(turn.messages.at(-1).text, output);
+    assert.equal(turn.messages.at(-1).attachment?.kind, failed ? undefined : kind);
+    for (const fact of example.kept) assert.ok(output.includes(fact), 'missing detail: ' + fact);
+    assert.doesNotMatch(output, example.rejected);
+  });
+});
+
 test('the global probability must exceed 65% before any selected tool runs', async () => {
   let separateDecisions = 0;
   const app = await demo({
