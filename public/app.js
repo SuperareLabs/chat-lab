@@ -863,21 +863,53 @@ function toolCallSection(calls, open = false) {
   return details;
 }
 
+function routedToolDecisionRows(decision, percent) {
+  const labels = { search_web: '联网搜索', find_mentor: '查找导师', calculate: '计算', recall_memory: '记忆查询',
+    character_media: '影像意向', share_photo: '照片', share_video: '视频' };
+  const rows = [];
+  if (Array.isArray(decision.selectedTools)) {
+    rows.push(['计划调用', decision.selectedTools.map(name => labels[name] ?? name).join('、') || '无']);
+  }
+  for (const name of ['search_web', 'find_mentor', 'calculate', 'recall_memory', 'character_media']) {
+    if (name === 'character_media' && decision.mediaAvailable === false) continue;
+    const route = decision.routes?.[name];
+    const choices = { call: name === 'character_media' ? '需要影像' : '调用', skip: '跳过', uncertain: '待确认' };
+    const parts = [choices[route?.choice] ?? '未评估'];
+    if (name === 'search_web' && route?.reason === 'outside_specialty_research') parts.push('为导师查证补充搜索');
+    if (Number.isFinite(route?.callProbability)) parts.push('调用概率 ' + percent(route.callProbability));
+    rows.push([labels[name], parts.join(' · ')]);
+  }
+  if (decision.mediaAvailable !== false && (Number.isFinite(decision.anyToolProbability) || Number.isFinite(decision.threshold))) {
+    const score = Number.isFinite(decision.anyToolProbability) ? percent(decision.anyToolProbability) : '未取得评分';
+    const gate = Number.isFinite(decision.threshold) ? `（须超过 ${percent(decision.threshold)}）` : '';
+    rows.push(['影像门槛', score + gate]);
+  }
+  const formats = (Array.isArray(decision.probabilities) ? decision.probabilities : [])
+    .filter(item => ['share_photo', 'share_video'].includes(item?.name) && Number.isFinite(item.probability))
+    .map(({ name, probability }) => labels[name] + ' ' + percent(probability));
+  if (formats.length) rows.push(['形式匹配度', formats.join('、')]);
+  return rows;
+}
+
 function toolDecisionSection(decision, open = true) {
   const percent = value => Number.isFinite(value)
     ? value.toLocaleString('zh-CN', { style: 'percent', maximumFractionDigits: 1 }) : '—';
-  const content = [dataGrid([
+  const scoped = decision.scope === 'media';
+  const metadata = [
     ['对话上下文', Number.isInteger(decision.turns) ? `最近 ${decision.turns} 轮（含本轮）` : null],
     ['模型', decision.resolvedModel || decision.model],
     ['链路', decision.route === 'chengdu-singapore' ? '本机 → 成都 → 新加坡 → OpenRouter' : null],
     ['耗时', Number.isFinite(decision.elapsedMs) ? `${decision.elapsedMs} ms` : null],
+  ];
+  const content = [dataGrid(scoped ? [...routedToolDecisionRows(decision, percent), ...metadata] : [...metadata,
     ['调用门槛', Number.isFinite(decision.threshold) ? `超过 ${percent(decision.threshold)}` : null],
     [decision.mode === 'orchestrated' ? '选中的照片或视频' : '最高分工具', decision.selectedTool],
     ['概率判断结果', ({ reply: '未选中工具', media: '先生成角色影像', standard: '普通工具',
       orchestrated: '搜索优先，独立工具并行', fallback: '按普通聊天流程回复' })[decision.mode]],
   ])];
   let count;
-  if (decision.status === 'succeeded') {
+  if (scoped) content.push(node('p', 'quiet', '记忆摘要不足时可读取详情，有原始资料的角色可按需查阅。'));
+  if (decision.status === 'succeeded' && !scoped) {
     const probabilities = Array.isArray(decision.probabilities) ? decision.probabilities : [];
     count = probabilities.length;
     content.push(dataGrid([
@@ -886,14 +918,14 @@ function toolDecisionSection(decision, open = true) {
       ...probabilities.map(({ name, probability }) => [name, percent(probability)]),
     ]));
   } else if (decision.status === 'running') content.push(node('p', 'quiet', '正在判断是否需要工具…'));
-  else {
+  else if (decision.status !== 'succeeded') {
     const reasons = { credential: '无法从 Service Clan 获取 Jev 连接', timeout: 'Jev 判断超时',
       relay: '成都 → 新加坡隧道不可用，已跳过工具判断',
-      provider: 'OpenRouter 请求失败', response: 'Jev 未返回完整的工具概率' };
+      provider: 'OpenRouter 请求失败', response: scoped ? '影像评分未完整返回' : 'Jev 未返回完整的工具概率' };
     const reason = reasons[decision.reason] || '暂未取得工具判断结果';
     content.push(node('p', 'quiet', decision.httpStatus ? `${reason}（HTTP ${decision.httpStatus}）` : reason));
   }
-  const details = section('工具判断概率', content, open, count);
+  const details = section(scoped ? '本轮工具判断' : '工具判断概率', content, open, count);
   details.dataset.section = 'tool-decision';
   return details;
 }

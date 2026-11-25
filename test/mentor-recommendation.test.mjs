@@ -243,6 +243,7 @@ for (const kind of ['photo', 'video']) {
     });
     assert.equal(turn.triggerRequests.length, 1);
     assert.ok(turn.triggerRequests[0].questions.character_media);
+    assert.deepEqual(turn.context.toolDecision.selectedTools, ['search_web', 'calculate', 'find_mentor', 'share_' + kind]);
     assert.equal(separateDecisions, 0);
     assert.deepEqual(generated, [kind]);
     assert.deepEqual(earlyOutput, []);
@@ -486,26 +487,88 @@ test('the final media reply matches the attachment that was actually delivered',
   });
 });
 
-test('the global probability must exceed 65% before any selected tool runs', async () => {
-  let separateDecisions = 0;
+test('the media threshold leaves independently selected mentor, search, calculation and memory tools available', async () => {
+  const listing = { title: '植物园票价', url: 'https://example.test/garden', snippet: '成人票每张 8 元。' };
+  let searches = 0;
   const app = await demo({
-    search: { configured: true, async search() { assert.fail('unexpected search'); } },
+    search: { configured: true, async search() { searches++; return { results: [listing] }; } },
     characterMedia: { available: () => true, async generate() { assert.fail('unexpected attachment'); } },
-    toolDecision: { async evaluate() { separateDecisions++; throw new Error('unexpected separate routing request'); } },
+    toolDecision: {},
   });
-  for (const probability of [0.65, 0.3]) {
-    const turn = await app.send('继续聊吧。', {
-      trigger: 'call', searchChoice: 'call', calculateChoice: 'call', mediaChoice: 'call',
-      mediaDecision: { status: 'succeeded', anyToolProbability: probability, probabilities: [{ name: 'share_photo', probability: 1 }] },
-      reply: '好呀。',
-    });
+  const args = { search_web: { query: '植物园票价' }, calculate: { expression: '8 * 2' }, recall_memory: { query: '上次看的花' } };
+  const turn = await app.send('查查植物园两张成人票一共多少钱，看看我上次看过什么花，再查一下鳄鱼爸爸擅长什么。能发照片也来一张。', {
+    agentId: shangang.id, trigger: 'call', searchChoice: 'call', calculateChoice: 'call', recallChoice: 'call', mediaChoice: 'call',
+    mediaDecision: { status: 'succeeded', anyToolProbability: 0.65, probabilities: [{ name: 'share_photo', probability: 1 }] },
+    decision: decision('directory', { mentorIds: [currentMentor.id] }),
+    nativeTool(choice) {
+      const name = choice?.function.name;
+      if (Object.hasOwn(args, name)) return { id: 'planned-' + name, type: 'function',
+        function: { name, arguments: JSON.stringify(args[name]) } };
+    },
+    reply: '两张票一共 16 元。鳄鱼爸爸能聊 AI 和学习方法。',
+  });
+  assert.equal(turn.triggerRequests.length, 1);
+  assert.equal(searches, 1);
+  assert.equal(turn.context.toolCalls[0]?.name, 'search_web');
+  assert.deepEqual(turn.context.toolCalls.map(call => call.name).sort(), ['calculate', 'find_mentor', 'recall_memory', 'search_web']);
+  assert.deepEqual(turn.context.toolDecision.selectedTools, ['search_web', 'calculate', 'recall_memory', 'find_mentor']);
+  assert.equal(turn.context.toolDecision.scope, 'media');
+  assert.equal(turn.context.toolDecision.routes.character_media.choice, 'call');
+  assert.equal(turn.context.toolDecision.selectedTool, null);
+  assert.equal(turn.context.modelRequests.some(request => request.purpose === 'character-media-plan'), false);
+  assert.deepEqual(offers(turn), []);
+});
+
+test('a 9% score for media preserves mentor profile lookups, conversation and explicit referrals from Shangang', async t => {
+  const low = { status: 'succeeded', anyToolProbability: 0.09, probabilities: [
+    { name: 'share_photo', probability: 0.02 }, { name: 'share_video', probability: 0.01 },
+  ] };
+  const cases = [
+    { text: '帮我看看鳄鱼爸爸擅长什么', target: currentMentor },
+    { text: '山冈，你自己擅长什么？', target: shangang },
+    { text: '这里的导师各自擅长什么？' },
+    { text: '我觉得鳄鱼爸爸很有趣。', skip: true },
+    { text: '我想换到鳄鱼爸爸那里聊天，帮我找他。', switchTo: currentMentor },
+  ];
+  for (const { text, target, skip, switchTo } of cases) await t.test(text, async () => {
+    const app = await demo({ toolDecision: {}, characterMedia: { available: () => true } });
+    const result = switchTo ? decision('offer', { mentorIds: [switchTo.id], basis: 'explicit_request', evidence: text })
+      : decision('directory', { mentorIds: target ? [target.id] : [] });
+    const reply = target ? target.name + '擅长' + target.metadata.mentor.specialty + '。' : skip ? '你喜欢他哪一点？' : '咱们来聊聊。';
+    const turn = await app.send(text, { agentId: shangang.id, trigger: skip ? 'skip' : 'call',
+      triggerReason: skip ? 'ordinary_chat_or_utility' : 'mentor_intent', mediaChoice: 'skip', mediaDecision: low, decision: result, reply });
     assert.equal(turn.triggerRequests.length, 1);
-    assert.deepEqual(turn.context.toolCalls, []);
-    assert.deepEqual(turn.classifications, []);
-    assert.deepEqual(turn.outerRequests.map(request => request.tools), [[]]);
-    assert.deepEqual(parts(turn), ['好呀。']);
+    assert.ok(turn.triggerRequests[0].questions.find_mentor);
+    assert.equal(turn.context.toolDecision.scope, 'media');
+    assert.equal(turn.context.toolDecision.routes.find_mentor.choice, skip ? 'skip' : 'call');
+    assert.deepEqual(turn.context.toolDecision.selectedTools, skip ? [] : ['find_mentor']);
+    assert.deepEqual(turn.context.toolCalls.map(call => call.name), skip ? [] : ['find_mentor']);
+    assert.deepEqual(parts(turn), [reply]);
+    assert.deepEqual(offers(turn).map(event => event.mentor.id), switchTo ? [switchTo.id] : []);
+    if (!skip && !switchTo) {
+      const [receipt] = turn.receipts;
+      assert.equal(receipt.status, 'directory');
+      const expected = target ? [target] : demoAgents;
+      assert.deepEqual(receipt.mentors.map(mentor => mentor.id).sort(), expected.map(mentor => mentor.id).sort());
+      if (target) assert.equal(receipt.mentors[0].specialty, target.metadata.mentor.specialty);
+    }
+  });
+});
+
+test('an unavailable media score preserves a valid mentor choice and selects no attachment', async () => {
+  const app = await demo({ toolDecision: {}, characterMedia: { available: () => true } });
+  for (const mediaDecision of [undefined, { status: 'unavailable', reason: 'response' }]) {
+    const turn = await app.send('查一下布爸的专长，再给我发张花的照片。', {
+      agentId: shangang.id, trigger: 'call', mediaChoice: 'call', mediaDecision,
+      decision: decision('directory', { mentorIds: [currentMentor.id] }), reply: '布爸能聊 AI 和学习方法。',
+    });
+    assert.equal(turn.context.toolDecision.status, 'unavailable');
+    assert.equal(turn.context.toolDecision.mode, 'orchestrated');
+    assert.deepEqual(turn.context.toolDecision.selectedTools, ['find_mentor']);
+    assert.deepEqual(turn.context.toolCalls.map(call => call.name), ['find_mentor']);
+    assert.deepEqual(turn.receipts[0].mentors.map(mentor => mentor.id), [currentMentor.id]);
+    assert.ok(!turn.events.some(event => event.type === 'character_media'));
   }
-  assert.equal(separateDecisions, 0);
 });
 
 test('the trigger can route the same topic share differently for two specialties', async () => {
