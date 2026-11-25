@@ -52,13 +52,14 @@ const triggerUsageFor = turn => turn.snapshot.tables.usage_records
   .filter(row => row.run_id === turn.run.id && row.kind === 'mentor_trigger')
   .map(row => JSON.parse(row.entry));
 
-async function demo({ agents = demoAgents, search, clock, failWelcome = false, characterMedia, toolDecision, mediaPlan } = {}) {
+async function demo({ agents = demoAgents, search, clock, failWelcome = false, characterMedia, toolDecision, mediaPlan, memoryProvider } = {}) {
   let turn;
   const welcomeRequests = [];
   const briefRequests = [];
   const workspace = createBrowserWorkspace({
     defaultAgents: agents, defaultChildren: demoChildren, sharedPrompts: loadSharedPrompts(),
-    model: { name: 'test', configured: true }, memoryModel: { configured: false }, search, clock, characterMedia, toolDecision,
+    model: { name: 'test', configured: true }, memoryModel: { name: 'test', configured: Boolean(memoryProvider) },
+    memoryProvider, search, clock, characterMedia, toolDecision,
     mentorTrigger: { model: 'test-trigger', async decide(input, { signal }) {
       assert.equal(signal.aborted, false);
       turn.triggerRequests.push(input);
@@ -67,12 +68,13 @@ async function demo({ agents = demoAgents, search, clock, failWelcome = false, c
       const decisions = { find_mentor: { choice, reason: turn.triggerReason } };
       if (input.questions.search_web) decisions.search_web = { choice: turn.searchChoice, reason: turn.searchReason };
       if (input.questions.calculate) decisions.calculate = { choice: turn.calculateChoice };
+      if (input.questions.recall_memory) decisions.recall_memory = { choice: turn.recallChoice };
       if (input.questions.character_media) decisions.character_media = { choice: turn.mediaChoice };
       return { decisions, ...(turn.mediaDecision ? { mediaDecision: turn.mediaDecision } : {}),
         receipt: { model: 'test-trigger', usage: { input_tokens: 100, output_tokens: 0 } } };
     } },
     provider: { async chat({ messages, tools, toolChoice }) {
-      if (mediaPlan && /【Share (?:Photo|Video)】/u.test(messages[0].content)) return response(JSON.stringify(mediaPlan(messages)));
+      if (mediaPlan && /【Share (?:Photo|Video)】/u.test(messages[0].content)) return response(JSON.stringify(await mediaPlan(messages)));
       if (messages[0].content.includes('【主动欢迎】')) {
         welcomeRequests.push({ messages, tools });
         if (failWelcome) throw new Error('synthetic welcome failure');
@@ -86,7 +88,7 @@ async function demo({ agents = demoAgents, search, clock, failWelcome = false, c
         const input = JSON.parse(messages.at(-1).content);
         turn.classifications.push({ system: messages[0].content, input, tools });
         if (turn.decision instanceof Error) throw turn.decision;
-        const result = typeof turn.decision === 'function' ? turn.decision(input) : turn.decision;
+        const result = typeof turn.decision === 'function' ? await turn.decision(input) : turn.decision;
         return response(typeof result === 'string' ? result : JSON.stringify(result));
       }
       if (messages[0].content.startsWith('【导师推荐记录判断】')) {
@@ -103,7 +105,7 @@ async function demo({ agents = demoAgents, search, clock, failWelcome = false, c
         turn.receipts = messages.filter(message => message.role === 'tool').map(message => JSON.parse(message.content));
         turn.offersBeforeContinuation ??= offers(turn).length;
       }
-      const nativeTool = typeof turn.nativeTool === 'function' ? turn.nativeTool(toolChoice, messages) : turn.nativeTool;
+      const nativeTool = typeof turn.nativeTool === 'function' ? await turn.nativeTool(toolChoice, messages, tools) : turn.nativeTool;
       if (nativeTool && !messages.some(message => message.role === 'tool' && message.tool_call_id === nativeTool.id)) {
         return response('', [nativeTool], 'tool_calls');
       }
@@ -135,7 +137,8 @@ async function demo({ agents = demoAgents, search, clock, failWelcome = false, c
         calculateChoice = 'skip', requestId = crypto.randomUUID(), sessionId = sessions.get(`${childId}:${agentId}`) } = options;
       const scope = { childId, agentId };
       turn = { reply, nativeTool, failContinuation, trigger, triggerReason, searchChoice, searchReason, calculateChoice,
-        mediaChoice: options.mediaChoice, mediaDecision: options.mediaDecision, decision: options.decision ?? decision('stay'),
+        mediaChoice: options.mediaChoice, mediaDecision: options.mediaDecision, recallChoice: options.recallChoice ?? 'skip',
+        decision: options.decision ?? decision('stay'),
         historyReview: options.historyReview ?? { decision: 'proceed', reason: '可以继续推荐。' },
         events: [], triggerRequests: [], outerRequests: [], classifications: [], historyReviews: [], receipts: [] };
       const result = await workspace.execute({
@@ -269,6 +272,122 @@ for (const kind of ['photo', 'video']) {
     }
   });
 }
+
+test('after search, mentor, media, calculation and memory can all enter before any of them returns', async t => {
+  for (const mediaFails of [false, true]) await t.test(mediaFails ? 'media planning fails' : 'all branches succeed', async () => {
+    const listing = { title: '班级节目单', url: 'https://example.com/show', snippet: '当天曲目是《春日序曲》，门票 37 元。' };
+    const detail = '用拨片交替拨弦';
+    const attachment = { kind: 'photo', id: 'e'.repeat(48) };
+    const arrivals = new Set(), earlyOutput = [], memorySteps = [];
+    const ready = Promise.withResolvers(), release = Promise.withResolvers();
+    let searched = 0, finalReplies = 0;
+
+    async function enter(branch, evidence) {
+      assert.equal(searched, 1);
+      assert.ok(JSON.stringify(evidence).includes(listing.snippet), branch + ' did not receive the search result');
+      arrivals.add(branch);
+      if (arrivals.size === 4) ready.resolve();
+      await release.promise;
+    }
+    const app = await demo({
+      toolDecision: {},
+      search: { configured: true, async search() { searched++; return { results: [listing] }; } },
+      memoryProvider: { async chat({ messages }) {
+        const { userMessages } = JSON.parse(messages[1].content);
+        return response(JSON.stringify({ creates: [{ sourceMessageIds: [userMessages[0].id], kind: 'event', topics: ['吉他'],
+          summary: '周末练习吉他。', detail: { notes: detail } }], updates: [], mentions: [], retractions: [], overview: null }));
+      } },
+      async mediaPlan(messages) {
+        await enter('media', messages);
+        if (mediaFails) throw new Error('synthetic media plan failure');
+        return { should_send_image: true, template_id: 'SHOT_POV_SUBJECT', environment_context: 'a sunlit rehearsal room',
+          primary_subject: { asset_id: null, action_or_state: 'a concert program on a chair' } };
+      },
+      characterMedia: { available: kind => kind === 'photo', async generate() { return { ok: true, attachment }; } },
+    });
+    const off = { status: 'succeeded', anyToolProbability: 0, probabilities: [] };
+    await app.send('我周末练吉他。', { trigger: 'skip', mediaChoice: 'skip', mediaDecision: off, reply: '记住啦。' });
+    await app.newSession();
+    const memory = (await app.request('GET', '/api/memory', currentMentor.id)).value.items.find(item => item.summary === '周末练习吉他。');
+    assert.ok(memory, 'the original chat must create the memory we will recall');
+    const text = '我想练英文点餐。查今天的曲目和票价，算三张多少钱，找位老师，看看活动照片，再帮我回忆吉他具体练什么。';
+    const answer = '今天演《春日序曲》，三张票共 111 元。你上次练的是用拨片交替拨弦。';
+    const pending = app.send(text, {
+      searchChoice: 'call', calculateChoice: 'call', recallChoice: 'call', mediaChoice: 'call', mediaDecision: { status: 'succeeded', anyToolProbability: 0.95,
+        probabilities: [{ name: 'share_photo', probability: 0.9 }] },
+      async decision(input) {
+        await enter('mentor', input.currentSearchEvidence);
+        return proactive(duoluo, '我想练英文点餐', 'english-speaking');
+      },
+      async nativeTool(choice, messages, tools) {
+        if (choice?.function.name === 'search_web') return { id: 'search-show', type: 'function',
+          function: { name: 'search_web', arguments: '{"query":"班级节目单 曲目"}' } };
+        if (choice?.function.name === 'calculate') {
+          await enter('calculate', messages);
+          return { id: 'ticket-total', type: 'function', function: { name: 'calculate', arguments: '{"expression":"37*3"}' } };
+        }
+        if (choice?.function.name === 'recall_memory') {
+          await enter('memory', messages);
+          memorySteps.push('recall');
+          return { id: 'recall-guitar', type: 'function', function: { name: 'recall_memory', arguments: '{"query":"吉他"}' } };
+        }
+        if (tools.length !== 1 || tools[0].function.name !== 'get_memory_detail') return;
+        assert.deepEqual(memorySteps, ['recall']);
+        const afterRecall = messages.map(message => message.content ?? '').join('\n');
+        assert.ok(afterRecall.includes(memory.memoryId), 'the detail request must contain the ID of the recalled summary');
+        assert.ok(!afterRecall.includes(detail), 'the details must come from the detail tool');
+        memorySteps.push('detail');
+        return { id: 'guitar-detail', type: 'function', function: { name: 'get_memory_detail',
+          arguments: JSON.stringify({ memoryId: memory.memoryId }) } };
+      },
+      reply(messages) {
+        const outstanding = new Set();
+        for (const message of messages) {
+          if (message.role === 'tool') assert.ok(outstanding.delete(message.tool_call_id), 'unexpected or duplicate tool receipt');
+          else {
+            assert.equal(outstanding.size, 0, 'each assistant tool batch needs all its receipts before the next message');
+            for (const call of message.tool_calls ?? []) outstanding.add(call.id);
+          }
+        }
+        assert.equal(outstanding.size, 0);
+        const facts = JSON.stringify(messages);
+        assert.ok(facts.includes(detail));
+        assert.ok(facts.includes('111'));
+        assert.ok(facts.includes(listing.snippet));
+        assert.ok(messages.some(message => message.content?.includes('"sent":' + !mediaFails)));
+        assert.ok(facts.includes(duoluo.id));
+        finalReplies++;
+        return answer;
+      },
+      onEvent(event) {
+        if (!finalReplies && ['delta', 'reply_part', 'character_media', 'mentor_recommendation'].includes(event.type)) earlyOutput.push(event.type);
+      },
+    });
+    // A serial implementation cannot release the first branch. Always release on failure so the test leaves no pending chat.
+    const timer = setTimeout(() => ready.reject(new Error('waiting branches: ' + [...arrivals].join(', '))), 3000);
+    try {
+      await Promise.race([ready.promise, pending.then(() => assert.fail('chat completed before all branches entered'))]);
+    } finally {
+      clearTimeout(timer);
+      release.resolve();
+      await Promise.allSettled([pending]);
+    }
+    const turn = await pending;
+    assert.deepEqual([...arrivals].sort(), ['calculate', 'media', 'memory', 'mentor']);
+    assert.deepEqual(memorySteps, ['recall', 'detail']);
+    const audit = turn.context.toolCalls.map(call => call.name);
+    assert.equal(audit[0], 'search_web');
+    assert.deepEqual([...audit].sort(), ['calculate', 'find_mentor', 'get_memory_detail', 'recall_memory', 'search_web', 'share_photo']);
+    assert.ok(audit.indexOf('recall_memory') < audit.indexOf('get_memory_detail'));
+    const billed = turn.snapshot.tables.usage_records.filter(row => row.run_id === turn.run.id && row.tool_name && row.kind !== 'mentor_history_review');
+    assert.deepEqual(billed.map(row => row.tool_name).sort(), [...audit].sort(), 'concurrent calls must retain separate usage records');
+    assert.equal(finalReplies, 1);
+    assert.deepEqual(earlyOutput, []);
+    assert.deepEqual(parts(turn), [answer]);
+    assert.deepEqual(offers(turn).map(event => event.mentor.id), [duoluo.id]);
+    assert.deepEqual(turn.events.filter(event => event.type === 'character_media').map(event => event.attachment), mediaFails ? [] : [attachment]);
+  });
+});
 
 test('a delivered video stays attached when the chat model incorrectly denies sending it', async () => {
   const attachment = { kind: 'video', id: 'a'.repeat(48) };

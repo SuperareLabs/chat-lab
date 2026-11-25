@@ -874,7 +874,7 @@ function toolDecisionSection(decision, open = true) {
     ['调用门槛', Number.isFinite(decision.threshold) ? `超过 ${percent(decision.threshold)}` : null],
     [decision.mode === 'orchestrated' ? '选中的照片或视频' : '最高分工具', decision.selectedTool],
     ['概率判断结果', ({ reply: '未选中工具', media: '先生成角色影像', standard: '普通工具',
-      orchestrated: '搜索优先，其他工具随后执行', fallback: '按普通聊天流程回复' })[decision.mode]],
+      orchestrated: '搜索优先，独立工具并行', fallback: '按普通聊天流程回复' })[decision.mode]],
   ])];
   let count;
   if (decision.status === 'succeeded') {

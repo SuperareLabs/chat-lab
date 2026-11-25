@@ -3,7 +3,7 @@ import test from 'node:test';
 import { buildToolTriggerRequest, createToolDecisionClient } from '../lib/tool-trigger.mjs';
 
 const input = {
-  latestUserMessages: ['查公开资料，再拍一张照片。'], previousTurns: [],
+  latestUserMessages: ['查查我之前跟你说过的观察计划，再查公开资料，拍一张照片。'], previousTurns: [],
   currentMentor: { name: '测试导师', specialty: '自然观察' },
   availableTools: ['search_web', 'find_mentor', 'calculate', 'share_photo', 'share_video', 'recall_memory'],
 };
@@ -19,7 +19,8 @@ test('one Jev request returns independent routing choices and ranks only availab
     fetchImpl: async (_url, request) => {
       const body = JSON.parse(request.body);
       requests.push(body);
-      const answers = { ...categoryAnswers, character_media: { type: 'choice', choice: 'call' },
+      const answers = { ...categoryAnswers, recall_memory: { type: 'choice', choice: 'call', probabilities: { call: 0.86 } },
+        character_media: { type: 'choice', choice: 'call' },
         any_tool: { type: 'noul', noul: 0.97 }, share_photo: { type: 'noul', noul: 0.42 }, share_video: { type: 'noul', noul: 0.1 } };
       return Response.json({ model: 'jev-test', answers, usage: { input_tokens: 50 } });
     },
@@ -28,19 +29,23 @@ test('one Jev request returns independent routing choices and ranks only availab
   assert.equal(requests.length, 1);
   assert.deepEqual(Object.fromEntries(Object.entries(requests[0].questions).map(([id, q]) => [id, q.type])), {
     find_mentor: 'choice', search_web: 'choice', calculate: 'choice', any_tool: 'noul',
-    character_media: 'choice', share_photo: 'noul', share_video: 'noul',
+    recall_memory: 'choice', character_media: 'choice', share_photo: 'noul', share_video: 'noul',
   });
   assert.deepEqual(result.decisions, { find_mentor: { choice: 'call', reason: 'outside_specialty_research' },
-    search_web: { choice: 'skip', reason: 'explicit_no_search' }, calculate: { choice: 'skip' }, character_media: { choice: 'call' } });
+    search_web: { choice: 'skip', reason: 'explicit_no_search' }, calculate: { choice: 'skip' },
+    recall_memory: { choice: 'call', probability: 0.86 }, character_media: { choice: 'call' } });
   assert.deepEqual(result.mediaDecision, { status: 'succeeded', anyToolProbability: 0.97,
     probabilities: [{ name: 'share_photo', probability: 0.42 }, { name: 'share_video', probability: 0.1 }] });
   assert.deepEqual(result.receipt, { model: 'jev-test', usage: { input_tokens: 50 } });
 });
 
-test('media questions follow enabled capabilities and legacy callers keep choice-only responses', async () => {
+test('media and memory questions follow enabled capabilities and legacy callers keep choice-only responses', async () => {
   const requestFor = availableTools => buildToolTriggerRequest({ ...input, availableTools, includeMediaDecision: true });
   assert.deepEqual(Object.keys(requestFor(['share_video']).questions), ['any_tool', 'character_media', 'share_video']);
-  assert.deepEqual(Object.keys(requestFor(['recall_memory']).questions), ['any_tool']);
+  const memoryOnly = requestFor(['recall_memory']).questions;
+  assert.deepEqual(Object.keys(memoryOnly), ['any_tool', 'recall_memory']);
+  assert.deepEqual(Object.keys(memoryOnly.recall_memory.criteria), ['call', 'skip', 'uncertain']);
+  assert.deepEqual(Object.keys(requestFor(['get_memory_detail']).questions), ['any_tool']);
   const legacy = buildToolTriggerRequest(input);
   assert.deepEqual(Object.keys(legacy.questions), ['find_mentor', 'search_web', 'calculate']);
   const client = createToolDecisionClient({ model: 'jev-test', url: 'https://example.test/decisions' }, 'test', {
