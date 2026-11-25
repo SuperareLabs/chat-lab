@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { alignMediaReply, decodeChatOutput, chatHistoryForModel, ReplyFormatError } from '../lib/chat-output.mjs';
+import { alignMediaReply, decodeChatOutput, chatHistoryForModel, omitRepeatedSearchReply, ReplyFormatError } from '../lib/chat-output.mjs';
 import { createBrowserWorkspace } from '../lib/browser-workspace.mjs';
 
 const packed = messages => JSON.stringify({ messages });
@@ -30,6 +30,32 @@ test('model history preserves explicit boundaries without modifying stored evide
   assert.equal(wire[0].text, history[0].text);
   assert.deepEqual(JSON.parse(wire[1].text), { messages: history[1].parts });
   assert.deepEqual(JSON.parse(wire[2].text), { messages: [history[2].text] });
+});
+
+test('a media-only reply omits repeated news even when quotes change', () => {
+  const selfie = '自拍给你。';
+  const launch = '新闻查了几条：今天神舟二十四号发射成功了，还有纪念孙中山先生诞辰160周年的大会。';
+  const storm = '应急部那边提到台风“蔷琵”进了东海，你家要是靠海，这两天留个心。';
+  const name = '孙中山先生。';
+  const caption = '照片里我拿着纪念孙中山先生诞辰160周年的宣传单。';
+  const evidence = { ok: true, results: [{ title: '神舟二十四号发射成功，纪念孙中山先生诞辰160周年', snippet: '台风蔷琵进入东海。' }] };
+  const previous = [selfie, launch, storm, name, caption];
+  const current = [selfie, launch, storm.replace('“蔷琵”', '「蔷琵」'), name, caption];
+  assert.deepEqual(omitRepeatedSearchReply(current, previous, evidence), [selfie, name, caption]);
+  assert.deepEqual(omitRepeatedSearchReply([launch, storm], previous, evidence), []);
+});
+
+test('search repetition removal keeps nearby new statements and needs a prior successful receipt', () => {
+  const news = '科技馆周二到周日9:30开馆。';
+  const evidence = { ok: true, results: [{ title: '科技馆公告', snippet: '科技馆周二到周日9:30开馆，周一休馆。' }] };
+  const keep = ['孙中山先生。', '蓝色围巾很衬你。'];
+  const previous = [news, ...keep];
+  const photo = '镜头里窗帘被风吹了起来。';
+  const corrected = '科技馆周二到周日10:30开馆。';
+  const reply = [`${photo}${news.replace('。', '！')}${corrected}`, ...keep];
+  assert.deepEqual(omitRepeatedSearchReply(reply, previous, evidence), [`${photo}${corrected}`, ...keep]);
+  assert.deepEqual(omitRepeatedSearchReply(reply, previous, { ...evidence, ok: false }), reply);
+  assert.deepEqual(omitRepeatedSearchReply(reply, [], evidence), reply);
 });
 
 test('media failure wording is removed without replacing the search, mentor or observation reply', () => {

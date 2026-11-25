@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildToolTriggerRequest, createToolDecisionClient } from '../lib/tool-trigger.mjs';
+import { blocksWebSearch, buildToolTriggerRequest, createToolDecisionClient } from '../lib/tool-trigger.mjs';
 
 const input = {
   latestUserMessages: ['查查我之前跟你说过的观察计划，再查公开资料，拍一张照片。'], previousTurns: [],
@@ -129,4 +129,33 @@ test('tool call scores aggregate all calling outcomes and keep the search score 
   assert.deepEqual(decisions.find_mentor, { choice: 'call', reason: 'outside_specialty_research', probability: 0.5, callProbability: 0.78 });
   assert.deepEqual(decisions.search_web, { choice: 'call', reason: 'outside_specialty_research', callProbability: 0.12 });
   assert.deepEqual(decisions.calculate, { choice: 'skip', probability: 0.91, callProbability: 0.04 });
+});
+
+test('only a prior search offers reuse and its score never counts toward a new web call', async () => {
+  const params = { ...input, availableTools: ['search_web', 'find_mentor'], includeToolDecision: true };
+  const previousWebSearch = { ok: true, query: '学院校报 航模展', retrieved_at: '2026-11-25T01:00:00Z',
+    results: [{ title: '航模展报道' }] };
+  const followup = buildToolTriggerRequest({ ...params, previousWebSearch });
+  const fresh = buildToolTriggerRequest(params);
+  assert.ok(Object.hasOwn(followup.questions.search_web.criteria, 'reuse_previous'));
+  assert.ok(followup.questions.any_tool.instructions.includes('reuse_previous → skip'));
+  assert.ok(!Object.hasOwn(fresh.questions.search_web.criteria, 'reuse_previous'));
+  assert.ok(!fresh.questions.any_tool.instructions.includes('reuse_previous'));
+
+  const answers = { find_mentor: categoryAnswers.find_mentor, any_tool: { type: 'noul', noul: 0.91 },
+    search_web: { type: 'choice', choice: 'reuse_previous', probabilities: { reuse_previous: 0.96, call: 0.02 } } };
+  const client = createToolDecisionClient({ model: 'jev-test', url: 'https://example.test/decisions' }, 'test', {
+    fetchImpl: async () => Response.json({ answers }),
+  });
+  const result = await client.decide(followup);
+  assert.deepEqual(result.decisions.search_web, { choice: 'skip', reason: 'reuse_previous', probability: 0.96, callProbability: 0.02 });
+  assert.ok(blocksWebSearch(result.decisions.search_web));
+  assert.equal(result.decisions.find_mentor.choice, 'call');
+  assert.equal((await client.decide(fresh)).decisions.search_web, undefined);
+  for (const choice of ['explicit_no_search', 'missing_reference', 'call']) {
+    answers.search_web = { type: 'choice', choice };
+    const { decisions } = await client.decide(followup);
+    assert.equal(decisions.search_web.choice, choice === 'call' ? 'call' : 'skip');
+    assert.equal(decisions.search_web.reason, choice === 'call' ? undefined : choice);
+  }
 });

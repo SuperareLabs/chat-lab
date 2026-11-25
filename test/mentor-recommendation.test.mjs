@@ -75,7 +75,9 @@ async function demo({ agents = demoAgents, search, searchPlanningTimeoutMs, cloc
         receipt: { model: 'test-trigger', usage: { input_tokens: 100, output_tokens: 0 } } };
     } },
     provider: { async chat({ messages, tools, toolChoice, signal }) {
-      if (mediaPlan && /【Share (?:Photo|Video)】/u.test(messages[0].content)) return response(JSON.stringify(await mediaPlan(messages)));
+      if (mediaPlan && /【(?:Share (?:Photo|Video)|(?:照片|视频)参考图判断)】/u.test(messages[0].content)) {
+        return response(JSON.stringify(await mediaPlan(messages)));
+      }
       if (messages[0].content.includes('【主动欢迎】')) {
         welcomeRequests.push({ messages, tools });
         if (failWelcome) throw new Error('synthetic welcome failure');
@@ -274,6 +276,94 @@ for (const kind of ['photo', 'video']) {
     }
   });
 }
+
+test('a group photo keeps the previous selfie and conversation while earlier news waits for a follow-up', async () => {
+  const headline = '星台今天公布了“晴窗”巡天计划。';
+  const schedule = '「晴窗」计划会在周三首次观测。';
+  const location = '首轮观测地点是青石台东站。';
+  const listing = { title: '星台观测简报', url: 'https://example.com/news', snippet: headline + schedule + location };
+  const selfiePrompt = '发一张你的自拍，再帮我查一下星台今天的新闻。';
+  const groupPrompt = '就在刚才那扇蓝窗旁，来张你跟小美的合照。';
+  const groupReply = '我跟小美在蓝窗旁挨着站好啦，这张合照给你。';
+  const keep = 'the blue window beside the subjects';
+  const photoIds = ['a'.repeat(48), 'b'.repeat(48)];
+  const searches = [], generations = [], plans = [];
+  const app = await demo({
+    toolDecision: {},
+    search: { configured: true, async search({ query }) { searches.push(query); return { results: [listing] }; } },
+    characterMedia: {
+      available: kind => kind === 'photo',
+      async photoReferences(history) {
+        const attachment = history.findLast(message => message.role === 'assistant' && message.attachment)?.attachment;
+        return attachment ? [{ id: 'photo-1', assetId: attachment.id, scene: 'a selfie beside a blue window' }] : [];
+      },
+      async generate(kind, { scene, references }) {
+        const id = photoIds[generations.length];
+        generations.push({ kind, scene, references });
+        return { ok: true, attachment: { kind, id } };
+      },
+    },
+    mediaPlan(messages) {
+      const input = JSON.parse(messages[1].content);
+      if (input.photoReferences) return { needs_reference_image: true, references: [{ id: input.photoReferences[0].id, keep }] };
+      plans.push(input);
+      const group = input.conversation.at(-1).at(-1).text === groupPrompt;
+      return { should_send_image: true, template_id: 'SHOT_SELFIE_CLOSE', environment_context: 'beside a blue window',
+        primary_subject: { asset_id: 'character', action_or_state: group ? 'smiling next to Xiaomei' : 'smiling at the camera' } };
+    },
+  });
+  const photo = { trigger: 'skip', mediaChoice: 'call', toolDecision: { status: 'succeeded',
+    anyToolProbability: 0.95, probabilities: [{ name: 'share_photo', probability: 0.97 }] } };
+  const first = await app.send(selfiePrompt, {
+    ...photo, searchChoice: 'call', nativeTool(choice) {
+      if (choice?.function.name === 'search_web') return { id: 'news', type: 'function',
+        function: { name: 'search_web', arguments: JSON.stringify({ query: '星台观测简报' }) } };
+    }, reply: ['这是我在蓝窗旁的自拍。', headline, schedule],
+  });
+  assert.deepEqual(first.context.toolCalls.map(call => call.name), ['search_web', 'share_photo']);
+  assert.deepEqual(parts(first), ['这是我在蓝窗旁的自拍。', headline, schedule]);
+  assert.equal(first.messages.at(-1).attachment.id, photoIds[0]);
+
+  let groupInput;
+  const second = await app.send(groupPrompt, { ...photo, searchChoice: 'skip', reply(messages) {
+    groupInput = messages;
+    return [groupReply, headline, '“晴窗”计划会在周三首次观测。'];
+  } });
+  assert.equal(second.sessionId, first.sessionId);
+  assert.deepEqual(second.context.toolDecision.selectedTools, ['share_photo']);
+  assert.deepEqual(second.context.toolCalls.map(call => call.name), ['share_photo']);
+  assert.equal(second.messages.at(-1).attachment.id, photoIds[1]);
+  assert.deepEqual(second.events.find(event => event.type === 'character_media').attachment, { kind: 'photo', id: photoIds[1] });
+  assert.deepEqual(generations.map(generation => generation.kind), ['photo', 'photo']);
+  assert.match(generations[1].scene, /Xiaomei/u);
+  assert.deepEqual(generations[1].references, [{ assetId: photoIds[0], keep }]);
+  assert.deepEqual(plans[1].selectedReferenceImages.map(image => image.id), ['photo-1']);
+  assert.equal(plans[1].webSearch, undefined);
+  assert.ok(groupInput.some(message => message.role === 'user' && message.content === selfiePrompt));
+  assert.ok(groupInput.some(message => message.role === 'assistant' && message.content.includes(headline)));
+  const background = messages => JSON.parse(messages[1].content.split('\n')[1]);
+  assert.equal(background(groupInput).previousWebSearch, undefined);
+  assert.ok(groupInput.every(message => !message.content.includes(location)), 'an unspoken detail belongs only to the archived result');
+  assert.deepEqual(parts(second), [groupReply]);
+  assert.equal(second.messages.at(-1).text, groupReply);
+
+  let followUpInput;
+  const third = await app.send('回到刚才那条星台新闻，首轮观测地点在哪？', {
+    trigger: 'skip', searchChoice: 'skip', searchReason: 'reuse_previous', mediaChoice: 'skip',
+    toolDecision: { status: 'succeeded', anyToolProbability: 0.12, probabilities: [] },
+    reply(messages) {
+      followUpInput = messages;
+      const evidence = background(messages).previousWebSearch?.results[0].snippet;
+      return [headline, evidence?.includes(location) ? location : '我手头的资料没注明地点。'];
+    },
+  });
+  assert.equal(third.sessionId, first.sessionId);
+  assert.deepEqual(third.context.toolCalls, []);
+  assert.deepEqual(background(followUpInput).previousWebSearch.results, [listing]);
+  assert.deepEqual(parts(third), [headline, location]);
+  assert.deepEqual(searches, ['星台观测简报']);
+  assert.equal(generations.length, 2);
+});
 
 test('after search, mentor, media, calculation and memory can all enter before any of them returns', async t => {
   for (const mediaFails of [false, true]) await t.test(mediaFails ? 'media planning fails' : 'all branches succeed', async () => {
