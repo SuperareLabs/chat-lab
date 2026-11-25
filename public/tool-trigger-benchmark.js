@@ -1,4 +1,3 @@
-const providers = ['ark', 'jev'];
 const shortNames = { ark: '方舟', jev: 'Jev' };
 const defaultNames = { ark: '火山方舟 System One', jev: 'TypeSafe Jev · OpenRouter' };
 const byId = (id) => document.getElementById(id);
@@ -10,10 +9,14 @@ const mentorTool = 'find_mentor';
 const decisionLabels = { call: '触发', skip: '跳过', uncertain: '不确定' };
 const mentorReasonLabels = {
   mentor_intent: '想了解或找导师',
+  outside_specialty_research: '超出专长的研究查证',
   outside_specialty: '超出专长',
-  in_specialty: '属于专长',
+  question_or_help: '提问或求助',
+  in_specialty: '专长内的分享',
   ordinary_chat_or_utility: '闲聊或其他工具即可',
   insufficient: '信息不足',
+  explicit_no_search: '孩子明确不要联网',
+  missing_reference: '先补辨认线索',
 };
 
 function element(tag, className, text) {
@@ -62,6 +65,7 @@ function normalizeResult(result, expected) {
     decisions: result?.decisions ?? {},
     error: result?.error,
     responseModel: result?.responseModel,
+    repeats: list(result.repeats).map((attempt) => normalizeResult(attempt, expected)).filter(Boolean),
   };
 }
 
@@ -72,6 +76,8 @@ function summarize(rows, provider) {
   let missed = 0;
   let extra = 0;
   let uncertain = 0;
+  let repeated = 0;
+  let repeatedCorrect = 0;
   const latencies = [];
   for (const row of rows) {
     const result = row.results[provider];
@@ -82,6 +88,11 @@ function summarize(rows, provider) {
     missed += result.missed.length;
     extra += result.extra.length;
     uncertain += result.uncertain.length;
+    if (result.repeats.length) {
+      const attempts = [result, ...result.repeats];
+      repeated += attempts.length;
+      repeatedCorrect += attempts.filter((attempt) => attempt.exact).length;
+    }
     if (result.ok && Number.isFinite(result.latencyMs)) latencies.push(result.latencyMs);
   }
   latencies.sort((a, b) => a - b);
@@ -92,6 +103,8 @@ function summarize(rows, provider) {
     missed,
     extra,
     uncertain,
+    repeated,
+    repeatedCorrect,
     failed: attempted - completed,
     p50: percentile(latencies, .5),
     p95: percentile(latencies, .95),
@@ -117,7 +130,7 @@ function runDate(value, timeZone) {
   }
 }
 
-function renderOverview(payload, rows) {
+function renderOverview(payload, rows, providers) {
   const meta = byId('run-meta');
   meta.replaceChildren(definition('对话样本', integerFormat.format(rows.length) + ' 条'));
   if (payload.generatedAt) meta.append(definition('运行时间', runDate(payload.generatedAt, payload.timeZone)));
@@ -150,6 +163,7 @@ function renderOverview(payload, rows) {
       definition('误触发', integerFormat.format(stats.extra) + ' 次'),
       definition('不确定判定', integerFormat.format(stats.uncertain) + ' 次'),
     );
+    if (stats.repeated) metrics.append(definition('稳定性用例命中', stats.repeatedCorrect + ' / ' + stats.repeated + ' 次'));
     article.append(score, metrics);
     return article;
   }));
@@ -158,6 +172,7 @@ function renderOverview(payload, rows) {
   const missingProviders = providers.filter((provider) => rows.some(({ results }) => !results[provider]));
   const notice = byId('partial-notice');
   pairedPanel.hidden = notice.hidden = true;
+  if (providers.length < 2) return;
   if (missingProviders.length) {
     notice.textContent = missingProviders.map((provider) => shortNames[provider]).join('、')
       + ' 的评测结果尚未齐备。完整结果生成后，刷新页面即可查看两边的对比。';
@@ -222,7 +237,7 @@ function mentorResult(row, result) {
   return mark;
 }
 
-function renderRoleComparisons(rows) {
+function renderRoleComparisons(rows, providers) {
   const groups = [...Map.groupBy(rows.filter((row) => row.comparisonId), (row) => row.comparisonId).values()]
     .filter((group) => new Set(group.map(currentRole)).size > 1);
   byId('role-comparisons').hidden = !groups.length;
@@ -243,7 +258,7 @@ function renderRoleComparisons(rows) {
     const article = element('article', 'panel role-comparison');
     const first = group[0];
     article.append(element('h3', '', first.text));
-    const comparison = table(['当前导师', '预期', '方舟', 'Jev']);
+    const comparison = table(['当前导师', '预期', ...providers.map((provider) => shortNames[provider])]);
     for (const row of group) {
       const line = comparison.body.insertRow();
       const title = rowTitle(line, currentRole(row));
@@ -258,8 +273,9 @@ function renderRoleComparisons(rows) {
   byId('role-comparison-list').replaceChildren(...cases);
 }
 
-function renderBreakdowns(grouped, rows, toolIds, toolLabel) {
-  const groupTable = table(['场景', '样本', '方舟', 'Jev']);
+function renderBreakdowns(grouped, rows, toolIds, toolLabel, providers) {
+  const columns = providers.map((provider) => shortNames[provider]);
+  const groupTable = table(['场景', '样本', ...columns]);
   for (const [group, cases] of grouped) {
     const row = groupTable.body.insertRow();
     rowTitle(row, group);
@@ -278,7 +294,7 @@ function renderBreakdowns(grouped, rows, toolIds, toolLabel) {
   }
   byId('group-summary').replaceChildren(groupTable.wrap);
 
-  const toolTable = table(['工具', '应触发', '方舟', 'Jev']);
+  const toolTable = table(['工具', '应触发', ...columns]);
   for (const id of toolIds) {
     const row = toolTable.body.insertRow();
     const label = toolLabel(id);
@@ -347,6 +363,10 @@ function resultCell(provider, result, toolLabel) {
     uncertainty.title = result.uncertain.map(toolLabel).join('、');
     meta.append(uncertainty);
   }
+  if (result.repeats.length) {
+    const attempts = [result, ...result.repeats];
+    meta.append(element('span', '', attempts.filter((attempt) => attempt.exact).length + '/' + attempts.length + ' 次正确'));
+  }
   cell.append(meta);
   return cell;
 }
@@ -373,6 +393,12 @@ function historyBox(row, toolLabel) {
   if (row.roleSpecialty) box.append(element('p', 'detail-facts', '专长为 ' + row.roleSpecialty + '。'));
   if (row.expectedReason) box.append(element('p', 'detail-facts', '标注依据　' + row.expectedReason));
   if (row.pendingInvite) box.append(element('p', 'detail-facts', '当前有待确认的推荐邀请。'));
+  if (row.activeMentorCard?.mentor?.name) {
+    box.append(element('p', 'detail-facts', '当前推荐卡　' + row.activeMentorCard.mentor.name + ' · ' + row.activeMentorCard.goal));
+  }
+  if (row.previousWebSearch?.query) {
+    box.append(element('p', 'detail-facts', '已有搜索　' + row.previousWebSearch.query));
+  }
   if (row.unavailableTools.length) {
     box.append(element('p', 'detail-facts',
       '当前不可用的工具为 ' + row.unavailableTools.map(toolLabel).join('、') + '。'));
@@ -421,14 +447,28 @@ function decisionBox(provider, result, toolLabel) {
   if (result.extra.length) box.append(element('p', 'is-bad', '误触发 ' + result.extra.map(toolLabel).join('、')));
   if (result.responseModel) box.append(element('p', 'detail-facts', '响应标记模型 ' + result.responseModel));
   if (!result.ok) box.append(element('p', 'is-bad', errorText(result.error)));
+  if (result.repeats.length) {
+    const attempts = [result, ...result.repeats];
+    const hits = attempts.filter((attempt) => attempt.exact).length;
+    const runs = element('ol', 'history-list repeat-list');
+    attempts.forEach((attempt, index) => {
+      const line = element('li');
+      line.append(element('strong', '', '第 ' + (index + 1) + ' 次'),
+        pillSet(attempt.tools, toolLabel, attempt.ok ? '无触发' : '接口失败', attempt.ok ? 'empty' : 'fail'),
+        element('span', attempt.exact ? 'is-good' : 'is-bad', attempt.exact ? '正确' : '有误'));
+      runs.append(line);
+    });
+    box.append(element('p', 'detail-facts', '重复判断 ' + hits + ' / ' + attempts.length + ' 次正确'), runs);
+  }
   return box;
 }
 
-function caseRow(row, toolLabel) {
+function caseRow(row, toolLabel, providers) {
   const details = element('details', 'case-row');
   const summary = element('summary', 'case-grid');
   const title = element('span', 'case-main');
-  title.append(element('span', 'case-id', row.id + ' · ' + row.group + ' · ' + currentRole(row)),
+  const turn = row.sequenceTurn ? ' · 第 ' + row.sequenceTurn + ' 轮' : '';
+  title.append(element('span', 'case-id', row.id + ' · ' + (row.sequenceTitle ?? row.group) + ' · ' + currentRole(row) + turn),
     element('span', 'case-text', row.text));
   const expected = element('span');
   expected.append(element('span', 'cell-label', '预期'), pillSet(row.expected, toolLabel));
@@ -442,15 +482,14 @@ function caseRow(row, toolLabel) {
 }
 
 function matchOutcome({ results }, outcome) {
-  const { ark, jev } = results;
-  const paired = ark && jev;
+  const checked = Object.values(results).filter(Boolean);
   switch (outcome) {
-    case 'wrong': return (ark && !ark.exact) || (jev && !jev.exact);
-    case 'different': return paired && ark.exact !== jev.exact;
-    case 'bothwrong': return paired && !ark.exact && !jev.exact;
-    case 'correct': return paired && ark.exact && jev.exact;
-    case 'error': return (ark && !ark.ok) || (jev && !jev.ok);
-    case 'uncertain': return ark?.uncertain.length || jev?.uncertain.length;
+    case 'wrong': return checked.some((result) => !result.exact || result.repeats.some((attempt) => !attempt.exact));
+    case 'different': return checked.length === 2 && checked[0].exact !== checked[1].exact;
+    case 'bothwrong': return checked.length === 2 && checked.every((result) => !result.exact);
+    case 'correct': return checked.length > 0 && checked.every((result) => result.exact && result.repeats.every((attempt) => attempt.exact));
+    case 'error': return checked.some((result) => !result.ok || result.repeats.some((attempt) => !attempt.ok));
+    case 'uncertain': return checked.some((result) => result.uncertain.length || result.repeats.some((attempt) => attempt.uncertain.length));
     default: return true;
   }
 }
@@ -458,14 +497,15 @@ function matchOutcome({ results }, outcome) {
 function renderMethod(methodology) {
   const entries = [
     ['对照输入', methodology?.input || '两边使用相同的工具目录、语义判断规则和已标注对话。每条样本只判断当前这一轮。'],
-    ['工具转发', methodology?.routingRule || '被选中的工具转发到本地模拟处理器。实际工具列记录这轮转发的工具集合。'],
+    ['工具判定', methodology?.routingRule || '选中列记录这一轮模型选择的工具集合。'],
     ['准确率', '实际工具集合与预期集合完全一致才计为正确。接口失败计为错误。不确定判断单独展示。'],
     ['漏触发和误触发', '预期触发但未执行的工具记一次漏触发。预期之外执行的工具记一次误触发。接口失败时，预期工具均计为漏触发。'],
     ['P50 和 P95', (methodology?.measurement || '从本机向模型服务发起 HTTP 请求，记录拿到可解析判断的耗时。') + '分位值按升序最近秩统计。'],
     ['本次范围', methodology?.scope || '评测外层从语义判断到工具触发。导师卡片、推荐记录和频控由工具内部处理。'],
   ];
   const settings = [];
-  if (Number.isFinite(methodology?.runsPerCase)) settings.push('每题每边 ' + methodology.runsPerCase + ' 次');
+  if (Number.isFinite(methodology?.runsPerCase)) settings.push('常规用例每个模型 ' + methodology.runsPerCase + ' 次');
+  if (Number.isFinite(methodology?.stabilityRuns)) settings.push('稳定性用例每个模型 ' + methodology.stabilityRuns + ' 次');
   if (Number.isFinite(methodology?.parallelCases)) settings.push('并行 ' + methodology.parallelCases + ' 题');
   if (Number.isFinite(methodology?.timeoutMs)) settings.push('单请求超时 ' + latency(methodology.timeoutMs));
   if (settings.length) entries.push(['运行设置', settings.join('，') + '。']);
@@ -501,6 +541,11 @@ function renderMethod(methodology) {
 }
 
 function render(payload) {
+  const providers = Object.keys(shortNames).filter((id) => payload.cases.some(({ results }) => results?.[id]));
+  const singleModel = providers.length === 1;
+  byId('report').toggleAttribute('data-single-model', singleModel);
+  for (const option of byId('outcome-filter').querySelectorAll('[data-paired]')) option.hidden = option.disabled = singleModel;
+  if (byId('outcome-filter').selectedOptions[0]?.disabled) byId('outcome-filter').value = '';
   const labels = payload.tools ?? {};
   const toolLabel = (id) => {
     const item = labels[id];
@@ -515,25 +560,26 @@ function render(payload) {
       group,
       expected,
       history,
-      unavailableTools: list(input.unavailableTools),
-      query: [input.id, group, currentRole(input), input.comparisonId, input.text, ...history.map(contentOf)].join(' ').toLowerCase(),
+      unavailableTools: list(input.unavailableTools).filter((tool) => Object.hasOwn(labels, tool)),
+      query: [input.id, group, currentRole(input), input.comparisonId, input.sequenceTitle, input.contextComparisonId,
+        input.text, ...history.map(contentOf)].join(' ').toLowerCase(),
       results: Object.fromEntries(providers.map((provider) => [provider, normalizeResult(input.results?.[provider], expected)])),
     };
   });
   const grouped = Map.groupBy(rows, (row) => row.group);
   const toolIds = new Set(Object.keys(labels));
   for (const { expected, results } of rows) {
-    for (const id of [...expected, ...(results.ark?.tools ?? []), ...(results.jev?.tools ?? [])]) toolIds.add(id);
+    for (const id of [...expected, ...Object.values(results).flatMap((result) => [...(result?.tools ?? [])])]) toolIds.add(id);
   }
-  renderOverview(payload, rows);
-  renderRoleComparisons(rows);
-  renderBreakdowns(grouped, rows, toolIds, toolLabel);
+  renderOverview(payload, rows, providers);
+  renderRoleComparisons(rows, providers);
+  renderBreakdowns(grouped, rows, toolIds, toolLabel, providers);
   renderMethod(payload.methodology);
-  byId('ark-column').textContent = shortNames.ark + ' · 实际';
-  byId('jev-column').textContent = shortNames.jev + ' · 实际';
+  byId('case-columns').replaceChildren(element('span', '', '样本 / 对话原话'), element('span', '', '预期工具'),
+    ...providers.map((provider) => element('span', '', shortNames[provider] + ' · 选中工具')), element('span'));
   fillSelect('group-filter', [...grouped.keys()].map((group) => [group, group]));
   fillSelect('tool-filter', [...toolIds].map((id) => [id, toolLabel(id)]));
-  const elements = rows.map((row) => ({ row, node: caseRow(row, toolLabel) }));
+  const elements = rows.map((row) => ({ row, node: caseRow(row, toolLabel, providers) }));
   const empty = element('p', 'empty-list', '没有符合当前筛选条件的样本。');
   byId('case-list').replaceChildren(...elements.map(({ node }) => node), empty);
   const applyFilters = () => {

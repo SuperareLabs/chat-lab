@@ -25,8 +25,31 @@ test('power precedence, negative powers and signed decimal remainder are correct
     assert.equal(calculate(expression).result, expected, expression);
   }
 });
+test('scientific functions compose with arithmetic and preserve approximate provenance', () => {
+  for (const [expression, expected] of [
+    ['10^8 / ln(10^8)', 1e8 / Math.log(1e8)],
+    ['sqrt(3^2 + 4^2) + LOG10(1000)', 8],
+    ['ln(1/2)', Math.log(0.5)],
+    ['sqrt(9)^2 + log10(100) % 1.5', 9.5],
+    ['sqrt((10^400 + 1)/(10^400 - 1))', 1],
+  ]) {
+    const { result, approximate, exactResult } = calculate(expression);
+    assert.ok(Math.abs(Number(result) - expected) <= Math.max(Math.abs(expected), 1) * 1e-13, expression);
+    assert.equal(approximate, true, expression);
+    assert.equal(exactResult, undefined, expression);
+  }
+});
 test('invalid expressions, division by zero and excessive work fail safely', () => {
   for (const expression of ['1/0', '1%0', '0^-1', '2^0.5', '2^1001', '9^999^999', '1e999999', '('.repeat(65)+'1'+')'.repeat(65), '1+'.repeat(600)+'1', '1;process.exit()', '1 2', '2**3', '(2+3', 'NaN']) {
+    assert.throws(() => calculate(expression), CalculationError, expression);
+  }
+});
+test('scientific functions reject invalid domains, unknown names, malformed arguments and excessive nesting', () => {
+  for (const expression of [
+    'ln(-1)', 'log10(0)', 'sqrt(-1)', 'sqrt(10^400)', '1/ln(1)',
+    'constructor(1)', 'sqrt.constructor(4)', 'Math.log(10)', 'ln(1, 2)', 'ln 2', 'ln()',
+    'sqrt('.repeat(65) + '1' + ')'.repeat(65),
+  ]) {
     assert.throws(() => calculate(expression), CalculationError, expression);
   }
 });
@@ -37,4 +60,9 @@ test('calculate tool passes exact results and actionable safe errors to the mode
   assert.equal(result.result, 587252533006304);
   assert.doesNotThrow(() => JSON.stringify(result));
   assert.deepEqual(await execute('calculate', { expression: '1/0' }), { ok: false, expression: '1/0', error: '不能除以零' });
+  const approximation = await execute('calculate', { expression: '1000 / ln(1000)' });
+  assert.equal(approximation.ok, true);
+  assert.equal(approximation.approximate, true);
+  assert.equal(Object.hasOwn(approximation, 'exactResult'), false);
+  assert.ok(Math.abs(Number(approximation.result) - 144.764827301084) < 1e-10);
 });

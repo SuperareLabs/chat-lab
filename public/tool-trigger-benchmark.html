@@ -18,7 +18,7 @@
       <header class="intro">
         <div>
           <h1>工具触发评测</h1>
-          <p>用同一套规则和对话样本，比较方舟和 Jev 什么时候触发工具，以及从发出请求到收到判定需要多久。</p>
+          <p>查看模型在不同角色和多轮对话里选中了哪些工具，以及判定耗时。</p>
         </div>
         <dl class="run-meta" id="run-meta" hidden></dl>
       </header>
@@ -33,7 +33,7 @@
       <div id="report" hidden>
         <section aria-labelledby="overview-title">
           <header class="section-header">
-            <h2 id="overview-title">总体对比</h2>
+            <h2 id="overview-title">总体结果</h2>
             <a href="#cases">查看逐条结果 <span aria-hidden="true">↓</span></a>
           </header>
           <p class="partial-notice" id="partial-notice" hidden></p>
@@ -89,23 +89,17 @@
                 <span>结果</span>
                 <select id="outcome-filter">
                   <option value="">全部结果</option>
-                  <option value="wrong">至少一方有误</option>
-                  <option value="different">只有一方正确</option>
-                  <option value="bothwrong">双方有误</option>
-                  <option value="correct">双方正确</option>
+                  <option value="wrong">有误（含复测）</option>
+                  <option value="different" data-paired>只有一方正确</option>
+                  <option value="bothwrong" data-paired>双方有误</option>
+                  <option value="correct">全部判定正确</option>
                   <option value="error">接口失败</option>
                   <option value="uncertain">有不确定判断</option>
                 </select>
               </label>
             </form>
             <div class="case-count" id="case-count" role="status"></div>
-            <div class="case-columns case-grid" id="case-columns" aria-hidden="true">
-              <span>样本 / 对话原话</span>
-              <span>预期工具</span>
-              <span id="ark-column"></span>
-              <span id="jev-column"></span>
-              <span></span>
-            </div>
+            <div class="case-columns case-grid" id="case-columns" aria-hidden="true"></div>
             <div id="case-list"></div>
           </div>
         </section>

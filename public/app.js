@@ -20,7 +20,6 @@ const state = {
   pendingMessages: [], pendingTimer: null,
   memorySignature: null, memoryOpen: new Set(), memoryDetails: new Map(), memoryData: null, memoryFilter: 'active', polling: false,
   sessionUsage: null, liveToolCalls: null,
-  mentorRecommendation: null,
   catalogRevision: null, catalogAvailable: false, catalogAgents: [],
 };
 const selectionKey = 'croco-lab-v1.selection';
@@ -29,6 +28,8 @@ let localSelection = {};
 let bootstrapSerial = 0;
 let pendingEntry = null;
 let entryRecoveryTimer;
+let sessionStatusTimer;
+let sessionStatusRequest = 0;
 const avatars = new Map([['9a15fadb-1fa5-437d-aeee-6f2a3e1e8d65', '/assets/benny.png']]);
 const defaultPortraits = new Map([['2faddbf5-f25c-4972-9cb2-e57ee021ac12', '/assets/zhou-yu-portrait.png']]);
 const agentDisplayOrder = new Map([['lin-xiaoman', 0], ['9a15fadb-1fa5-437d-aeee-6f2a3e1e8d65', 1]]);
@@ -43,6 +44,9 @@ const maxBatchChars = 16_000;
 const statusLabels = {
   queued: '待整理', pending: '待整理', running: '整理中', processing: '整理中',
   complete: '已整理', completed: '已整理', committed: '已整理', done: '已整理', succeeded: '已整理', failed: '整理失败',
+};
+const mentorCardStatusLabels = {
+  declined: '已拒绝', superseded: '已被新推荐替换', expired: '已过期', visited: '已前往',
 };
 const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
   timeZone: 'Asia/Shanghai', year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -306,11 +310,14 @@ function updateControls() {
   ui['new-agent'].disabled = scopeLocked;
   ui['new-session'].disabled = scopeLocked || !hasScope() || blocked;
   if (ui['clear-memory']) ui['clear-memory'].disabled = scopeLocked || !hasScope();
-  ui['chat-input'].disabled = !hasScope() || closed || blocked || state.busy || state.queueSaving;
-  ui['chat-input'].placeholder = !state.agentId ? '先创建或选择角色' : !state.childId ? '先选择或创建用户' : blocked ? `此角色仅限${minimumAge}岁及以上，请切换或创建成年用户` : closed ? '此会话已结束，可开启新会话' : `给${agent()?.name || 'Agent'}发消息…`;
-  ui['send-button'].disabled = locked || !hasScope() || closed || blocked || !ui['chat-input'].value.trim();
-  const recommendationButton = ui.messages.querySelector('.mentor-recommendation button');
-  if (recommendationButton) recommendationButton.disabled = scopeLocked || !availableMentor(state.mentorRecommendation?.mentor.id);
+  ui['chat-input'].disabled = !hasScope() || blocked || state.busy || state.queueSaving;
+  ui['chat-input'].placeholder = !state.agentId ? '先创建或选择角色' : !state.childId ? '先选择或创建用户' : blocked ? `此角色仅限${minimumAge}岁及以上，请切换或创建成年用户` : closed ? '此会话已结束，发消息可继续聊天' : `给${agent()?.name || 'Agent'}发消息…`;
+  ui['send-button'].disabled = locked || !hasScope() || blocked || !ui['chat-input'].value.trim();
+  const availableCards = new Set((state.conversation?.mentorCards || []).filter(card => card.state === 'available').map(card => card.id));
+  for (const card of ui.messages.querySelectorAll('.mentor-recommendation')) {
+    card.querySelector('button').disabled = scopeLocked || !availableCards.has(card.dataset.cardId) ||
+      !availableMentor(card.dataset.mentorId);
+  }
   syncAgentGalleryRoute();
 }
 
@@ -341,39 +348,65 @@ function availableMentor(id) {
   return target && !audienceBlocked(target) ? target : null;
 }
 
-function appendMentorRecommendation(stack, mentor) {
-  const target = availableMentor(mentor?.id);
-  if (!target) return false;
-  const name = mentor.name || target.name;
+function setMentorCardState(card, status) {
+  if (card.dataset.state === status) return;
+  const active = status === 'available';
+  card.dataset.state = status;
+  const label = card.querySelector('.mentor-recommendation-status');
+  label.textContent = mentorCardStatusLabels[status] || '';
+  label.hidden = active;
+  const action = card.querySelector('button');
+  action.hidden = !active;
+  if (!active) action.disabled = true;
+}
+
+function appendMentorRecommendation(stack, { id, mentor, copy, state: status }) {
+  const target = state.agents.find(item => item.id === mentor.id);
   const card = node('section', 'mentor-recommendation');
+  card.dataset.cardId = id;
+  card.dataset.mentorId = mentor.id;
   card.setAttribute('aria-label', '推荐导师');
   const avatar = node('img', 'mentor-recommendation-avatar');
   avatar.alt = '';
-  avatar.src = mentor.avatarUrl || imageForAgent(target);
+  avatar.src = mentor.avatarUrl || (target ? imageForAgent(target) : fallbackAvatar);
   avatar.addEventListener('error', () => { avatar.src = fallbackAvatar; }, { once: true });
   const details = node('div', 'mentor-recommendation-details');
-  details.append(node('div', 'mentor-recommendation-label', '推荐导师'), node('strong', '', name));
-  const description = mentor.description || target.description;
-  if (description) details.append(node('p', '', description));
-  const action = node('button', 'primary-button mentor-recommendation-action', '去聊聊');
+  details.append(node('div', 'mentor-recommendation-label', '推荐导师'), node('strong', '', mentor.name));
+  if (copy) details.append(node('p', '', copy));
+  const action = node('button', 'primary-button mentor-recommendation-action', `找${mentor.name}`);
   action.type = 'button';
-  action.disabled = ui['agent-select'].disabled;
-  action.addEventListener('click', () => void selectAgent(target.id, mentor));
-  card.append(avatar, details, action);
+  action.disabled = ui['agent-select'].disabled || !availableMentor(mentor.id);
+  action.addEventListener('click', () => void openMentorHandoff(id));
+  const stateLabel = node('span', 'mentor-recommendation-status');
+  stateLabel.setAttribute('role', 'status');
+  card.append(avatar, details, action, stateLabel);
+  setMentorCardState(card, status);
   stack.append(card);
-  return true;
 }
 
-function clearMentorRecommendation() {
-  state.mentorRecommendation = null;
-  ui.messages.querySelector('.mentor-recommendation')?.remove();
+function applyMentorCardState(id, status) {
+  const saved = state.conversation?.mentorCards?.find(card => card.id === id);
+  if (saved) saved.state = status;
+  for (const card of ui.messages.querySelectorAll('.mentor-recommendation')) {
+    if (card.dataset.cardId === id) setMentorCardState(card, status);
+  }
+}
+
+function reconcileMentorCards() {
+  const cards = new Map((state.conversation?.mentorCards || []).map(card => [card.id, card]));
+  const rendered = [...ui.messages.querySelectorAll('.mentor-recommendation')];
+  if (rendered.length !== cards.size || rendered.some(card => !cards.has(card.dataset.cardId))) {
+    renderChat(state.conversation?.messages, false, { preserveScroll: true });
+    return;
+  }
+  for (const element of rendered) setMentorCardState(element, cards.get(element.dataset.cardId).state);
 }
 
 function clearMentorArrival() {
   el('mentor-arrival')?.remove();
 }
 
-function showMentorArrival(source, target, mentor) {
+function showMentorArrival(source, target, retry, confirmed = true) {
   clearMentorArrival();
   const card = node('section', 'mentor-arrival');
   card.id = 'mentor-arrival';
@@ -382,11 +415,17 @@ function showMentorArrival(source, target, mentor) {
   const check = node('span', 'mentor-arrival-check', '✓');
   check.setAttribute('aria-hidden', 'true');
   const copy = node('div');
-  copy.append(
-    node('strong', '', '已通过推荐进入'),
-    node('p', 'mentor-arrival-route', `由${source.name}推荐，正在和${target.name}聊天。`),
-  );
-  if (mentor.description) copy.append(node('p', 'mentor-arrival-specialty', mentor.description));
+  copy.append(node('strong', '', confirmed ? '已通过推荐进入' : '转介待确认'),
+    node('p', 'mentor-arrival-route', confirmed
+      ? `由${source.name}推荐，正在和${target.name}聊天。`
+      : `已打开${target.name}的会话，可以重试确认这次转介。`));
+  if (retry) {
+    if (confirmed) copy.append(node('p', 'mentor-arrival-specialty', '欢迎消息暂未送达，你可以直接开始聊天。'));
+    const button = node('button', 'secondary-button mentor-arrival-retry', confirmed ? '重试欢迎消息' : '重试确认');
+    button.type = 'button';
+    button.addEventListener('click', () => void runAction(retry));
+    copy.append(button);
+  }
   card.append(check, copy);
   ui.messages.parentElement.before(card);
   card.focus({ preventScroll: true });
@@ -421,12 +460,11 @@ function renderChat(messages = [], loading = false, { preserveScroll = false } =
   const scrollTop = ui.messages.scrollTop;
   const followLatest = ui.messages.scrollHeight - scrollTop - ui.messages.clientHeight < 150;
   const empty = ui['chat-empty'];
-  const recommendation = state.mentorRecommendation;
+  const mentorCardsByMessage = new Map((state.conversation?.mentorCards || []).map(card => [card.messageId, card]));
   const rows = messages.map(message => {
     const { row, stack } = chatMessage(message.role, message.text ?? message.content ?? '', false, message.parts);
-    if (message.role === 'assistant' && message.id && recommendation?.sessionId === state.sessionId && recommendation.messageId === message.id) {
-      appendMentorRecommendation(stack, recommendation.mentor);
-    }
+    const card = message.role === 'assistant' && mentorCardsByMessage.get(message.id);
+    if (card) appendMentorRecommendation(stack, card);
     return row;
   });
   if (empty) {
@@ -1138,13 +1176,55 @@ async function refreshSessions(preferred = state.sessionId) {
   return true;
 }
 
+function cancelSessionStatus() {
+  clearTimeout(sessionStatusTimer);
+  sessionStatusRequest++;
+}
+
+async function refreshSessionStatus() {
+  const id = state.sessionId;
+  if (!state.authenticated || !id || state.conversation?.session?.id !== id || document.hidden ||
+      state.sending || state.queueSaving || state.pendingMessages.length ||
+      !state.conversation.mentorCards?.some(card => card.state === 'available')) return;
+  cancelSessionStatus();
+  const request = sessionStatusRequest;
+  const path = scoped(`/api/sessions/${encodeURIComponent(id)}/status`);
+  try {
+    const result = workspaceClient
+      ? await workspaceClient.api(path, undefined, 'GET', { force: true })
+      : await api(path);
+    if (request !== sessionStatusRequest || !state.authenticated || result.sessionId !== state.sessionId) return;
+    const session = state.conversation?.session;
+    if (session?.id !== id) return;
+    session.status = result.status;
+    if (result.status === 'closed') {
+      for (const card of state.conversation.mentorCards || []) {
+        if (card.state === 'available') applyMentorCardState(card.id, 'expired');
+      }
+      const listed = state.sessions.find(item => item.id === id);
+      if (listed && listed.status !== 'closed') {
+        listed.status = 'closed';
+        renderSelectors();
+      }
+      updateControls();
+      return;
+    }
+    const remaining = Date.parse(result.expiresAt) - Date.parse(result.serverNow);
+    if (Number.isFinite(remaining)) sessionStatusTimer = setTimeout(refreshSessionStatus, Math.max(50, remaining));
+  } catch (error) {
+    if (request === sessionStatusRequest && state.authenticated && error.status !== 404 && error.status !== 401) {
+      sessionStatusTimer = setTimeout(refreshSessionStatus, 5000);
+    }
+  }
+}
+
 async function openSession(id) {
   const version = ++state.sessionVersion;
+  cancelSessionStatus();
   clearMentorArrival();
   state.sessionId = id || '';
   state.conversation = null;
   state.liveToolCalls = null;
-  state.mentorRecommendation = null;
   renderUsage(null);
   if (id) renderChat([], true);
   else { renderChat(); renderContext(null); return; }
@@ -1158,18 +1238,19 @@ async function openSession(id) {
   renderChat(data.messages || []);
   renderContext(data.context);
   updateControls();
+  void refreshSessionStatus();
 }
 
 async function changeScope(preferred = '') {
   workspaceClient?.abortChat();
   ++state.scopeVersion;
   ++state.sessionVersion;
+  cancelSessionStatus();
   clearMentorArrival();
   state.sessionId = '';
   state.sessions = [];
   state.conversation = null;
   state.liveToolCalls = null;
-  state.mentorRecommendation = null;
   renderUsage(null);
   state.memorySignature = null;
   state.memoryOpen.clear();
@@ -1225,23 +1306,74 @@ async function runAction(action) {
   finally { state.busy = false; updateControls(); }
 }
 
-function selectAgent(id, mentor = null) {
+function selectAgent(id) {
   return runAction(async () => {
-    const offer = state.mentorRecommendation;
-    if (mentor && (offer?.mentor !== mentor || offer.sessionId !== state.sessionId)) return;
-    const target = mentor ? availableMentor(id) : state.agents.find(item => item.id === id);
-    if (!target) return;
-    const source = mentor && agent();
-    const childId = state.childId;
-    const nextScopeVersion = state.scopeVersion + 1;
+    if (!state.agents.some(item => item.id === id)) return;
     state.agentId = id;
     await changeScope();
-    if (source && state.authenticated && state.scopeVersion === nextScopeVersion &&
-        agent()?.id === id && state.childId === childId &&
-        (!state.sessionId || state.conversation?.session?.id === state.sessionId)) {
-      showMentorArrival(source, target, mentor);
-    }
   });
+}
+
+function openMentorHandoff(cardId) {
+  return runAction(async () => {
+    const saved = state.conversation?.mentorCards?.find(card => card.id === cardId);
+    if (saved?.state !== 'available' || !availableMentor(saved.mentor.id)) return;
+    const source = agent();
+    const sourceSessionId = state.sessionId;
+    let prepared;
+    try {
+      prepared = await api('/api/mentor-handoffs', { ...selectedScope(), cardId });
+      if (!state.authenticated) return;
+      state.agentId = prepared.agentId;
+      await changeScope(prepared.session.id);
+      if (state.conversation?.session?.id !== prepared.session.id) throw new Error('未能打开推荐的会话，请重试。');
+    } catch (error) {
+      if (state.authenticated) {
+        state.agentId = source.id;
+        if (prepared) await changeScope(sourceSessionId).catch(() => {});
+        else await openSession(sourceSessionId).catch(() => {});
+      }
+      throw error;
+    }
+    await confirmMentorArrival(cardId, source, sourceSessionId);
+  });
+}
+
+async function confirmMentorArrival(cardId, source, sourceSessionId, arrivalSessionId = state.sessionId) {
+  const scope = selectedScope();
+  const target = agent();
+  const version = state.scopeVersion;
+  const openSessionId = state.sessionId;
+  const retry = () => confirmMentorArrival(cardId, source, sourceSessionId, arrivalSessionId);
+  const current = () => state.authenticated && state.scopeVersion === version;
+  let confirmed = false;
+  put('chat-status', `${target.name}正在准备打招呼…`);
+  try {
+    const result = await api(`/api/mentor-handoffs/${encodeURIComponent(cardId)}/arrive`, {
+      ...scope, sessionId: arrivalSessionId,
+    });
+    confirmed = true;
+    if (!current()) return;
+    const sessionId = result.session.id;
+    if (openSessionId !== arrivalSessionId && sessionId !== openSessionId) {
+      showMentorArrival(source, target);
+      return;
+    }
+    if (sessionId !== state.sessionId) await refreshSessions(sessionId);
+    if (!current()) return;
+    await openSession(sessionId);
+    if (current() && state.sessionId === sessionId) showMentorArrival(source, target, result.welcomePending ? retry : null);
+  } catch (error) {
+    if (current()) {
+      if (!confirmed && [400, 403, 404, 409, 410].includes(error.status)) {
+        state.agentId = source.id;
+        await changeScope(sourceSessionId);
+      } else showMentorArrival(source, target, retry, confirmed);
+    }
+    throw error;
+  } finally {
+    if (current()) put('chat-status', '');
+  }
 }
 
 async function readStream(response, onEvent) {
@@ -1278,7 +1410,7 @@ async function readStream(response, onEvent) {
 async function queueMessage() {
   const input = ui['chat-input'];
   const text = input.value.trim();
-  if (!text || state.sending || state.busy || state.queueSaving || !hasScope() || audienceBlocked() || state.conversation?.session?.status === 'closed') return;
+  if (!text || state.sending || state.busy || state.queueSaving || !hasScope() || audienceBlocked()) return;
   if (!state.model.configured && state.model.mode !== 'demo') {
     show('app-error', '聊天模型尚未配置，请先在本机服务设置凭据。');
     return;
@@ -1323,7 +1455,7 @@ async function requestReply() {
   state.pendingTimer = null;
   if (!batch.length) return;
   state.sending = true;
-  clearMentorRecommendation();
+  cancelSessionStatus();
   state.liveToolCalls = [];
   renderLiveTools();
   show('app-error', '');
@@ -1336,6 +1468,7 @@ async function requestReply() {
   scrollLatest(true);
   let id = state.sessionId;
   let began = false;
+  let sessionChanged = false;
   let done = false;
   let streamEnded = false;
   let presentation = Promise.resolve();
@@ -1350,14 +1483,22 @@ async function requestReply() {
     const onEvent = event => {
       if (scopeVersion !== state.scopeVersion || !state.authenticated) return;
       if (event.type === 'mentor_recommendation') {
-        if (!began || streamEnded || event.sessionId !== id || state.mentorRecommendation) return;
-        if (appendMentorRecommendation(reply.stack, event.mentor)) {
-          state.mentorRecommendation = { sessionId: id, mentor: event.mentor };
+        if (!began || streamEnded || event.sessionId !== id || !event.card) return;
+        presentation = presentation.then(() => {
+          if (scopeVersion !== state.scopeVersion || !state.authenticated || reply.stack.querySelector('.mentor-recommendation')) return;
+          appendMentorRecommendation(reply.stack, event.card);
           scrollLatest();
-        }
+        }).catch(error => { presentationError ??= error; });
+        return;
+      }
+      if (event.type === 'mentor_card_updated') {
+        if (began && !streamEnded && event.sessionId === id) applyMentorCardState(event.cardId, event.state);
         return;
       }
       if (event.type === 'start' && event.sessionId && event.sessionId !== id) {
+        sessionChanged = true;
+        state.sessionId = event.sessionId;
+        state.conversation = null;
         renderUsage(null);
         renderChat();
         if (ui['chat-empty']) ui['chat-empty'].hidden = true;
@@ -1401,9 +1542,8 @@ async function requestReply() {
     await Promise.all([refreshSessions(id), refreshMemory()]);
     const data = await api(scoped(`/api/sessions/${encodeURIComponent(id)}`));
     state.conversation = data;
-    if (state.mentorRecommendation?.sessionId === id) {
-      state.mentorRecommendation.messageId = data.messages?.findLast(message => message.role === 'assistant')?.id;
-    }
+    if (sessionChanged) renderChat(data.messages || []);
+    else reconcileMentorCards();
     state.liveToolCalls = null;
     renderUsage(data.usage);
     renderContext(data.context);
@@ -1412,7 +1552,7 @@ async function requestReply() {
     await presentation;
     removeTyping(reply.stack);
     if (!state.authenticated) return;
-    if (!done) clearMentorRecommendation();
+    if (!done) reply.stack.querySelector('.mentor-recommendation')?.remove();
     show('app-error', error.name === 'AbortError' ? '回复已中止，消息草稿与已收到的内容已保留在本机。' : error.message);
     if (workspaceClient) void offerRecovery();
     if (!receivedParts.size) reply.row.remove();
@@ -1432,7 +1572,8 @@ async function requestReply() {
         renderUsage(data.usage);
         const recorded = data.messages || [];
         const lastReply = recorded.findLast(message => message.role === 'assistant');
-        if (!receivedParts.size || lastReply?.text?.startsWith(receivedPartTexts.join('\n\n'))) renderChat(recorded);
+        if (sessionChanged || !receivedParts.size || lastReply?.text?.startsWith(receivedPartTexts.join('\n\n'))) renderChat(recorded);
+        else reconcileMentorCards();
         renderContext(data.context);
         saveSelection();
       } catch { /* The in-flight reply stays visible until the next successful reload. */ }
@@ -1443,6 +1584,7 @@ async function requestReply() {
     put('chat-status', '');
     fitComposer();
     updateControls();
+    void refreshSessionStatus();
     if (state.authenticated && !ui['child-dialog'].open) input.focus();
   }
 }
@@ -1715,7 +1857,7 @@ function showEntrance(message = '') {
   state.catalogAvailable = false;
   state.catalogRevision = null;
   state.catalogAgents = [];
-  clearMentorRecommendation();
+  cancelSessionStatus();
   clearMentorArrival();
   ++state.scopeVersion;
   workspaceClient?.stop();
@@ -1889,14 +2031,18 @@ async function refreshLocalView() {
     const selectionChanged = id !== state.sessionId;
     const sessionsChanged = JSON.stringify(state.sessions) !== JSON.stringify(sessions);
     const messagesChanged = selectionChanged || JSON.stringify(state.conversation?.messages || []) !== JSON.stringify(conversation?.messages || []);
+    const cardsChanged = JSON.stringify(state.conversation?.mentorCards || []) !== JSON.stringify(conversation?.mentorCards || []);
     const contextChanged = JSON.stringify(state.conversation?.context ?? null) !== JSON.stringify(conversation?.context ?? null);
     const usageChanged = JSON.stringify(state.conversation?.usage ?? null) !== JSON.stringify(conversation?.usage ?? null);
     state.sessions = sessions; state.sessionId = id; state.conversation = conversation;
     if (agentsChanged || childrenChanged || sessionsChanged || selectionChanged) renderSelectors();
     if (selectionChanged) { clearMentorArrival(); saveSelection(); }
-    if (messagesChanged) renderChat(conversation?.messages || [], false, { preserveScroll: !selectionChanged });
+    if (messagesChanged || cardsChanged) renderChat(conversation?.messages || [], false, { preserveScroll: !selectionChanged });
     if (contextChanged) renderContext(conversation?.context ?? null);
     if (usageChanged) renderUsage(conversation?.usage ?? null);
+    if ((selectionChanged || cardsChanged) && conversation?.mentorCards?.some(card => card.state === 'available')) {
+      void refreshSessionStatus();
+    }
     await refreshMemory();
     if (current()) updateControls();
   } catch (error) {
@@ -2062,6 +2208,7 @@ async function initializeEntrance() {
     catch (error) { show('app-error', error.message); }
   });
   document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) void refreshSessionStatus();
     if (!document.hidden && workspaceClient && state.authenticated) {
       void workspaceClient.store.read('workspace').then(record => {
         if (record?.nextDeadline <= Date.now() && Number.isFinite(record?.nextDeadline)) {

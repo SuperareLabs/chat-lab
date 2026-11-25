@@ -222,6 +222,15 @@ button, select, input, textarea, summary { -webkit-tap-highlight-color: transpar
 .mentor-recommendation-details strong { font-size: 15px; }
 .mentor-recommendation-details p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
 .mentor-recommendation-action { grid-column: 2; justify-self: start; }
+.mentor-recommendation-status {
+  grid-column: 2;
+  justify-self: start;
+  color: var(--muted);
+  font-size: 12px;
+}
+.mentor-recommendation[data-state]:not([data-state="available"]) { background: #f4f4f0; }
+.mentor-recommendation[data-state]:not([data-state="available"]) .mentor-recommendation-avatar { filter: grayscale(1); }
+.mentor-recommendation[data-state]:not([data-state="available"]) .mentor-recommendation-label { color: var(--muted); }
 
 .mentor-arrival {
   display: grid;
@@ -251,6 +260,7 @@ button, select, input, textarea, summary { -webkit-tap-highlight-color: transpar
 .mentor-arrival strong { font-size: 15px; }
 .mentor-arrival p { margin: 2px 0 0; font-size: 13px; }
 .mentor-arrival-specialty { color: var(--muted); }
+.mentor-arrival-retry { margin-top: 7px; }
 
 @keyframes message-arrive {
   from { opacity: 0; transform: translateY(4px); }

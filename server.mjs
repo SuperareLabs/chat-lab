@@ -308,6 +308,37 @@ export function createLabServer(options = {}) {
         return sendJson(response, 201, { session });
       }
     }
+    const sessionStatusRoute = /^\/api\/sessions\/([^/]+)\/status$/.exec(pathname);
+    if (method === 'GET' && sessionStatusRoute) {
+      let sessionId;
+      try { sessionId = decodeURIComponent(sessionStatusRoute[1]); }
+      catch { throw problem('会话 ID 无效'); }
+      return sendJson(response, 200, runtime.sessionStatus({ childId, agentId, sessionId }));
+    }
+    if (method === 'POST' && pathname === '/api/mentor-handoffs') {
+      const body = await jsonBody(request);
+      const args = {
+        childId: safeText(body.childId, '用户 ID', 100), agentId: safeText(body.agentId, '角色 ID', 100),
+        cardId: safeText(body.cardId, '推荐卡片 ID', 100),
+      };
+      return sendJson(response, 200, runtime.prepareMentorHandoff(args));
+    }
+    const mentorArrivalRoute = /^\/api\/mentor-handoffs\/([^/]+)\/arrive$/.exec(pathname);
+    if (method === 'POST' && mentorArrivalRoute) {
+      const body = await jsonBody(request);
+      let cardId;
+      try { cardId = decodeURIComponent(mentorArrivalRoute[1]); }
+      catch { throw problem('推荐卡片 ID 无效'); }
+      const args = {
+        childId: safeText(body.childId, '用户 ID', 100), agentId: safeText(body.agentId, '角色 ID', 100),
+        cardId: safeText(cardId, '推荐卡片 ID', 100), sessionId: safeText(body.sessionId, '会话 ID', 100),
+      };
+      const controller = new AbortController();
+      response.once('close', () => controller.abort());
+      const result = await runtime.arriveMentorHandoff(args, controller.signal);
+      if (!response.destroyed && !response.writableEnded) return sendJson(response, 200, result);
+      return;
+    }
     if (method === 'GET' && pathname.startsWith('/api/sessions/')) {
       runtime.assertScope(childId, agentId);
       runtime.tick();

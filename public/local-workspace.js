@@ -263,11 +263,10 @@ export class LocalWorkspace {
   async recovery({ includeActive = false } = {}) {
     const [meta, record, lease] = await Promise.all([this.metadata(), this.store.read('workspace'), this.store.read('lease')]);
     const activeOwner = lease?.expiresAt > Date.now() ? lease.owner : null;
-    const candidates = Object.entries(meta.outboxes || {});
-    const found = candidates.find(([owner]) => owner === this.owner) || candidates.find(([owner]) => owner !== activeOwner)
-      || (includeActive ? candidates[0] : null);
+    const candidates = Object.entries(meta.outboxes || {}).filter(([owner]) => includeActive || owner !== activeOwner);
+    const found = candidates.find(([owner]) => owner === this.owner) || candidates[0];
     return { outbox: found?.[1] || null, outboxOwner: found?.[0],
-      operation: !includeActive && activeOwner && activeOwner !== this.owner ? null : record?.operation,
+      operation: !includeActive && activeOwner ? null : record?.operation,
       activeUntil: activeOwner ? lease.expiresAt : null };
   }
   async acknowledgeRecovery() { await this.store.recoverOperation(); }
@@ -341,6 +340,8 @@ export class LocalWorkspace {
       let persisted = false;
       let began = false;
       let failure;
+      let completed;
+      const cards = [];
       let checkpoint = 0;
       let deltaText = '';
       const replyParts = new Map();
@@ -356,6 +357,8 @@ export class LocalWorkspace {
             persisted = true;
             this.schedule(saved.nextDeadline);
             this.channel?.postMessage({ revision: saved.revision });
+            for (const card of cards) onEvent(card);
+            if (completed) onEvent(completed);
           } else {
             if (event.type === 'start') began = true;
             if (event.sessionId) outbox.body.sessionId = event.sessionId;
@@ -365,6 +368,8 @@ export class LocalWorkspace {
             if (event.type === 'error') failure = new Error(event.message || event.error || '本轮回复失败');
             // Keep reading after an error: the final workspace contains the user
             // messages, partial reply and recorded model usage for this attempt.
+            else if (event.type === 'mentor_recommendation' && !persisted) cards.push(event);
+            else if (event.type === 'done' && !persisted) completed = event;
             else onEvent(event);
             if (Date.now() - checkpoint > 300 && !persisted) { checkpoint = Date.now(); await this.saveOutbox(outbox); }
           }

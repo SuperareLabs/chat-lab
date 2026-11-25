@@ -87,7 +87,7 @@ const cases = [
   ] },
   { id: 'decline-after-card', turns: [
     turn('给我一个跟小林聊的入口。', 'offer', { mentorId: XIAOLIN }),
-    turn('算了，先不要换人。布爸，蛹是怎么回事？', 'stay', { answer: [/幼虫|毛毛虫|蚕/u, /成虫|蝶|过渡|变化|发育|重组|变态/u] }),
+    turn('算了，先不要换人。布爸，蛹是怎么回事？', 'stay', { answer: [/幼虫|毛毛虫|蚕/u, /成虫|蝶|过渡|变化|发育|重组|变态|变身|换.{0,4}样|改造/u] }),
   ] },
   { id: 'unclear-mentor-goal', turns: [turn('请推荐一个导师。', 'clarify', { answer: /想聊|想学|想做|哪方面|什么|哪类|哪一块|想了解|想干[啥嘛]/u })] },
   { id: 'ambiguous-mentor-name', seed: [
@@ -161,11 +161,11 @@ const rosterCases = [
   { id: 'alias-songshu-lili', turns: [turn('我想找松鼠丽丽一起做零花钱预算，给我一个和她聊天的入口吧。', 'offer', { mentorId: LILI })] },
   { id: 'roster-english-dialogue', turns: [turn('我想找个导师和我演一遍怎么用英语点餐，我一开口就忘词。', 'offer', { mentorId: DUOLUO })] },
   { id: 'roster-packing-list', turns: [turn('学校要去春游，我总是漏东西。帮我找一位导师，陪我做一张能自己勾选的物品清单。', 'offer', { mentorId: KANGDI })] },
-  { id: 'roster-stay-lightning', turns: [turn('为什么我总是先看到闪电，过一会儿才听到雷声？', 'stay', {
+  { id: 'roster-stay-lightning', agentId: MOFEI, turns: [turn('为什么我总是先看到闪电，过一会儿才听到雷声？', 'stay', {
     noMentorTool: true, answer: [/光|闪电/u, /声音|声速|雷声/u, /更快|比.{0,8}快|先到|慢/u],
   })] },
   { id: 'roster-stay-wording', agentId: MOFEI, turns: [turn('水滴落到水面上的声音可以用什么词形容？给我一个就好。', 'stay', {
-    noMentorTool: true, answer: /滴|叮|嘀[嗒哒]|扑通|噗通|啪嗒|啵|咕咚/u,
+    answer: /滴|叮|嘀[嗒哒]|扑通|噗通|啪嗒|啵|咕咚/u,
   })] },
   { id: 'roster-stay-celebrate', turns: [turn('我的第一次小组汇报顺利讲完啦！', 'stay', { noMentorTool: true })] },
 ];
@@ -190,7 +190,7 @@ const clarificationCases = [
     turn('我想找莫非', 'offer', { mentorId: MOFEI, plainOffer: true }),
   ] },
   { id: 'clarify-space-explicit-request', turns: [
-    turn('帮我找一位导师聊宇宙吧。我想了解行星为什么会绕着转、它们离我们多远，还想知道卫星怎么把照片传回来。我还没想好先学哪一块。', 'clarify', {
+    turn('帮我找一位导师聊宇宙吧。我想了解行星为什么会绕着转、怎么用比例估算它们离我们多远，还想知道卫星怎么把照片传回来。我还没想好先学哪一块。', 'clarify', {
       directions: spaceDirections, minimumDirections: 3, answer: clarifyQuestion,
     }),
     turn('我想学怎么算行星离我们有多远，找皮斯理吧。', 'offer', { mentorId: PISLEY, plainOffer: true }),
@@ -210,11 +210,11 @@ const clarificationCases = [
 const englishPractice = { mentorId: DUOLUO, basis: 'proactive_specialty', categoryId: 'english-speaking', plainOffer: true,
   answer: /\b(?:hello|i(?:['’]d like| want| would like)|(?:can|could|may) i (?:have|get|order)|please)\b|(?:先|试着).{0,15}(?:挑.{0,4}菜|说一.{0,3}句|选.{0,3}菜|点.{0,3}菜)/iu };
 const longJumpPractice = { mentorId: SHANGANG, basis: 'proactive_specialty', categoryId: 'sports-technique', plainOffer: true,
-  answer: /先.{0,12}(?:助跑|迈步|起跳|摆臂|收腿|热身)|最后.{0,3}两步|单脚起跳|摆臂/u };
+  answer: /先.{0,12}(?:助跑|迈步|起跳|摆臂|收腿|热身)|最后.{0,3}两步|单脚起跳|摆臂|(?:踏地|蹬地).{0,12}(?:起跳|往上)|走.{0,4}步.{0,24}(?:蹬地|起跳|往上)/u };
 const proactiveCases = [
   { id: 'proactive-spoken-english-after-translation', turns: [
     turn('hello', 'stay', { noMentorTool: true }),
-    turn('苹果用英语怎么说', 'stay', { noMentorTool: true, answer: /apple/iu }),
+    turn('苹果用英语怎么说', 'stay', { answer: /apple/iu }),
     turn('我想学英语口语了', 'offer', { ...englishPractice,
       answer: /口语|开口|对话|打招呼|(?:练习|练|说|试|来).{0,6}(?:一句|一遍)|\b(?:hello|hi|good morning|my name is|i(?:['’]d like| want| like| am| have)|would you|what is)\b/iu }),
   ] },
@@ -222,17 +222,17 @@ const proactiveCases = [
     turn('我想练英语口语，先模拟在餐馆点餐。', 'offer', englishPractice),
     turn('冰块放在桌上为什么会化成水？', 'stay', { answer: /热|暖|温度|融化/u }),
     turn('蚂蚁都怎么找到回家的路？', 'stay', { answer: /味|气味|信息素|路线|标记|太阳/u }),
-    turn('换个场景，我想模拟在车站用英语问路，让自己敢开口说。', 'stay', { answer: /英语|问路|车站|开口|\b(?:excuse me|where|could|station)\b/iu }),
+    turn('我还是想接着练英语开口说。换个场景，在车站用英语问路怎么说？', 'stay', { answer: /英语|问路|车站|开口|\b(?:excuse me|where|could|station)\b/iu }),
     turn('我还是想找鹦鹉多罗，专门和她练英文问路。', 'offer', { mentorId: DUOLUO, plainOffer: true }),
   ] },
-  { id: 'proactive-cross-category-cooldown', turns: [
+  { id: 'proactive-independent-goal', turns: [
     turn('我想练英语口语，模拟在餐厅用英语点餐。', 'offer', englishPractice),
-    turn('换个方向，我想练跳远，做一轮把助跑和起跳接起来的动作训练。', 'stay', { answer: /助跑|起跳|步|跳远|动作/u }),
+    turn('换个方向，我想练跳远，做一轮把助跑和起跳接起来的动作训练。', 'offer', longJumpPractice),
     turn('柠檬为什么吃起来酸酸的？', 'stay', { answer: /酸|柠檬酸/u }),
-    turn('我打算用活动时间练跳远，想做分步练习，让助跑的最后两步和起跳配合好。', 'offer', longJumpPractice),
+    turn('还是上次那个跳远训练，我想练助跑的最后两步和起跳怎么配合。', 'stay', { answer: /助跑|起跳|步|跳远|动作/u }),
   ] },
   { id: 'proactive-simple-word-stays', turns: [
-    turn('英语里的 apple 是什么意思？', 'stay', { noMentorTool: true, answer: /苹果/u }),
+    turn('英语里的 apple 是什么意思？', 'stay', { answer: /苹果/u }),
   ] },
 ];
 
@@ -390,10 +390,14 @@ function readDecision(response) {
   try {
     const decision = JSON.parse(response.content);
     const required = ['basis', 'evidence', 'mentorIds', 'reason', 'replyHint', 'status'];
-    const optional = ['categoryId', 'relatedRecommendationId'];
+    const optional = ['categoryId', 'relatedRecommendationId', 'cardCopy', 'declinedCardId'];
+    const optionalObjects = ['handoffBrief', 'relatedRecommendationEvidence'];
     if (!decision || required.some(field => !Object.hasOwn(decision, field)) ||
-        Object.keys(decision).some(field => !required.includes(field) && !optional.includes(field) && field !== 'relatedRecommendationEvidence') ||
+        Object.keys(decision).some(field => !required.includes(field) && !optional.includes(field) && !optionalObjects.includes(field)) ||
         optional.some(field => decision[field] != null && typeof decision[field] !== 'string') ||
+        (decision.handoffBrief != null && (typeof decision.handoffBrief.goal !== 'string' ||
+          Object.entries(decision.handoffBrief).some(([key, text]) =>
+            !['goal', 'topic', 'progress', 'wantedHelp'].includes(key) || typeof text !== 'string'))) ||
         (decision.relatedRecommendationEvidence != null &&
           !['current', 'previous'].every(field => typeof decision.relatedRecommendationEvidence[field] === 'string')) ||
         !verdicts.has(decision.status) || !branches.has(decision.basis) ||

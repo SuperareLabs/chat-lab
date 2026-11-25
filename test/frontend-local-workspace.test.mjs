@@ -159,6 +159,28 @@ test('done without a final workspace is interrupted and retains user text and st
   assert.equal((await store.read('workspace')).snapshot, undefined);
 });
 
+test('a new recommendation becomes visible after commit while rejection updates remain live', async t => {
+  const store = new MemoryStore();
+  const workspace = await client(store, async () => events([
+    { type: 'start', sessionId: 's' },
+    { type: 'mentor_card_updated', cardId: 'old', state: 'declined' },
+    { type: 'reply_part', index: 0, text: '自然接话' },
+    { type: 'mentor_recommendation', card: { id: 'new' } },
+    { type: 'done', sessionId: 's' },
+    { type: 'workspace', ...result(2) },
+  ]));
+  t.after(() => workspace.stop());
+  const delivered = [];
+  await workspace.chat({ requestId: 'one', messages: [{ text: '用户输入' }] }, event => {
+    delivered.push([event.type, store.records.get('workspace')?.snapshot?.count]);
+  });
+  assert.deepEqual(delivered, [
+    ['start', undefined], ['mentor_card_updated', undefined], ['reply_part', undefined],
+    ['mentor_recommendation', 2], ['done', 2],
+  ]);
+  assert.equal((await workspace.recovery()).outbox, null);
+});
+
 test('an error event still consumes and commits the final workspace before reporting failure', async t => {
   const store = new MemoryStore();
   const delivered = [];
@@ -279,6 +301,24 @@ test('entry preflight reports a live owner and cannot discard its operation or s
   await store.clearOperation('live-tab');
   await store.release('live-tab');
   assert.equal((await workspace.entryState()).operation, null);
+});
+
+test('an in-flight session status refresh in the current tab does not appear as interrupted work', async t => {
+  const store = new MemoryStore();
+  let complete;
+  let started;
+  const requestStarted = new Promise(resolve => { started = resolve; });
+  const workspace = await client(store, async () => {
+    started();
+    return new Promise(resolve => { complete = resolve; });
+  });
+  t.after(() => workspace.stop());
+  const request = workspace.api('/api/sessions/s/status', undefined, 'GET', { force: true });
+  await requestStarted;
+  assert.equal((await workspace.entryState()).operation.owner, workspace.owner);
+  assert.equal((await workspace.recovery()).operation, null);
+  complete(json(result()));
+  await request;
 });
 
 test('a pre-start rejection saves the workspace but retains the message not archived by the server', async t => {

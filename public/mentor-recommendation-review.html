@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f4ed">
+  <title>角色推荐核对 · ChatLab</title>
+  <link rel="stylesheet" href="./mentor-recommendation-review.css">
+  <script type="module" src="./mentor-recommendation-review.js"></script>
+</head>
+<body>
+  <div class="review-shell">
+    <header class="topbar">
+      <a class="back-link" href="./">返回聊天 Demo</a>
+      <span class="brand">鳄鱼爸爸 · ChatLab</span>
+    </header>
+
+    <main>
+      <header class="intro">
+        <div class="intro-copy">
+          <h1>角色推荐核对清单</h1>
+          <p>逐项核对角色专长、推荐条件和卡片交接。</p>
+        </div>
+        <aside class="intro-guide" aria-label="填写方式">
+          <strong>留空即认可</strong>
+          <p>只在想改的条目下写意见。填完后复制或下载汇总，再发到对话里。</p>
+        </aside>
+      </header>
+
+      <noscript><p>请启用 JavaScript 后填写清单。</p></noscript>
+
+      <div class="workspace" id="workspace" hidden>
+        <aside class="review-nav">
+          <h2>清单目录</h2>
+          <nav id="review-nav" aria-label="核对章节"></nav>
+          <a class="nav-link" href="#review-footer">导出结果</a>
+        </aside>
+
+        <div>
+          <div class="review-toolbar">
+            <p class="summary-line" id="review-summary" aria-live="polite"></p>
+            <button class="filter-button" type="button" id="filter-edited" aria-pressed="false">只看有意见</button>
+          </div>
+          <div id="review-sections"></div>
+          <p class="empty-state" id="review-empty" hidden>目前还没有修改意见。</p>
+
+          <footer class="review-footer" id="review-footer">
+            <div>
+              <h2>导出核对结果</h2>
+              <p class="save-status" id="save-status" role="status"></p>
+            </div>
+            <div class="export-actions">
+              <button type="button" class="secondary-button" id="download-review">下载 Markdown</button>
+              <button type="button" class="export-button" id="copy-review">复制核对结果</button>
+            </div>
+          </footer>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <dialog class="export-dialog" id="export-dialog" aria-labelledby="export-title">
+    <form method="dialog">
+      <h2 id="export-title">复制核对结果</h2>
+      <p>已选中完整汇总，用浏览器的复制操作即可。</p>
+      <textarea class="export-text" id="export-text" aria-label="核对结果" readonly rows="10"></textarea>
+      <button class="secondary-button" type="submit">关闭</button>
+    </form>
+  </dialog>
+</body>
+</html>

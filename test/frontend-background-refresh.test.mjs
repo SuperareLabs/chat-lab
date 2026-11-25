@@ -71,3 +71,17 @@ test('a background read finishing after the user starts sending cannot replace t
   assert.equal(f.calls.reset, 0);
   assert.equal(f.input.value, '新输入');
 });
+
+test('a card-only history update repaints the card in place and keeps the current draft', async () => {
+  const f = fixture();
+  f.conversation.messages.push({ id: 'm2', role: 'assistant', text: '合成回复' });
+  f.conversation.mentorCards = [{ id: 'card', messageId: 'm2', state: 'declined' }];
+  f.state.conversation = clone(f.conversation);
+  f.state.conversation.mentorCards[0].state = 'available';
+  await f.refresh();
+  assert.equal(f.calls.chat.length, 1);
+  assert.equal(f.calls.chat[0][2].preserveScroll, true);
+  assert.equal(f.state.conversation.mentorCards[0].state, 'declined');
+  assert.equal(f.input.value, '还没发出的草稿');
+  assert.deepEqual(f.calls.errors, []);
+});

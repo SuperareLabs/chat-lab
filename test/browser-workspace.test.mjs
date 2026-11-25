@@ -445,6 +445,39 @@ test('snapshot schema, SQL-shaped fields, routes, references and versions fail b
   assert.equal(BROWSER_WORKSPACE_MAX_BYTES, 16 * 1024 * 1024);
 });
 
+test('old browser snapshots migrate delivered mentor context to the target session once', async () => {
+  const f = fixture(), a = await client(f);
+  const source = a.scope;
+  const turn = await a.chat('请帮我找一个角色。');
+  const cardId = turn.snapshot.tables.runs.at(-1).id;
+  const target = { ...source, agentId: f.config.defaultAgents[1].id };
+  a.select(target);
+  const destination = (await a.newSession()).value.session.id;
+  const legacy = structuredClone(a.snapshot);
+  for (const session of legacy.tables.sessions) delete session.mentor_handoff;
+  const original = legacy.tables.runs.find(row => row.id === cardId);
+  original.mentor_recommendation = JSON.stringify({
+    mentorId: target.agentId,
+    card: { mentor: { id: target.agentId, name: '公开角色乙' }, copy: '公开卡片', state: 'visited', brief: { goal: '这次转介的目标' } },
+    handoff: { targetSessionId: destination, arrivedAt: '2026-11-15T03:00:00.000Z', lastUserSeq: 0,
+      brief: { goal: '这次转介的目标', progress: '转介时准备的私有摘要' } },
+  });
+  const path = `/api/sessions/${destination}${query(target)}`;
+  const migrated = await f.workspace.execute({ method: 'GET', path, scope: target, snapshot: legacy });
+  const received = migrated.snapshot.tables.sessions.find(row => row.id === destination);
+  assert.deepEqual(JSON.parse(received.mentor_handoff), {
+    cardId, sourceAgentId: source.agentId,
+    brief: { goal: '这次转介的目标', progress: '转介时准备的私有摘要', sourceAgentName: '公开角色甲' },
+    lastUserSeq: 0, arrivedAt: '2026-11-15T03:00:00.000Z',
+  });
+  assert.doesNotMatch(JSON.stringify(migrated.value), /转介时准备的私有摘要|mentor_handoff/);
+
+  const next = migrated.snapshot;
+  next.tables.runs.find(row => row.id === cardId).mentor_recommendation = null;
+  const restored = await f.workspace.execute({ method: 'GET', path, scope: target, snapshot: next });
+  assert.equal(restored.snapshot.tables.sessions.find(row => row.id === destination).mentor_handoff, received.mentor_handoff);
+});
+
 test('failed streamed chats still end with a restorable workspace and retain user input', async () => {
   const f = fixture({ provider: { async chat() { throw new Error('合成模型故障'); } } }), a = await client(f);
   const result = await a.chat('这条输入需要保存。');
