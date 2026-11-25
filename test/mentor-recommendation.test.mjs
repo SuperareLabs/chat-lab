@@ -110,7 +110,7 @@ async function demo({ agents = demoAgents, search, clock, failWelcome = false } 
     } },
   });
   const boot = await workspace.execute({ method: 'GET', path: '/api/state' });
-  const childId = boot.value.children[0].id;
+  const defaultChildId = boot.value.children[0].id;
   let snapshot = boot.snapshot;
   const sessions = new Map();
 
@@ -118,7 +118,7 @@ async function demo({ agents = demoAgents, search, clock, failWelcome = false } 
     welcomeRequests, briefRequests,
     editSnapshot(edit) { snapshot = structuredClone(snapshot); edit(snapshot); },
     async request(method, path, agentId, payload) {
-      const scope = { childId, agentId };
+      const scope = { childId: defaultChildId, agentId };
       const result = await workspace.execute({
         method, path: method === 'GET' ? path + '?' + new URLSearchParams(scope) : path, scope, snapshot,
         ...(method === 'POST' ? { body: { ...scope, ...payload } } : {}),
@@ -127,9 +127,9 @@ async function demo({ agents = demoAgents, search, clock, failWelcome = false } 
       return result;
     },
     async send(text, options = {}) {
-      const { agentId = currentMentor.id, reply = naturalAnswer, nativeTool, failContinuation = false,
+      const { childId = defaultChildId, agentId = currentMentor.id, reply = naturalAnswer, nativeTool, failContinuation = false,
         trigger = 'call', triggerReason = 'mentor_intent', searchChoice = 'skip', searchReason,
-        calculateChoice = 'skip', requestId = crypto.randomUUID() } = options;
+        calculateChoice = 'skip', requestId = crypto.randomUUID(), sessionId = sessions.get(`${childId}:${agentId}`) } = options;
       const scope = { childId, agentId };
       turn = { reply, nativeTool, failContinuation, trigger, triggerReason, searchChoice, searchReason, calculateChoice,
         decision: options.decision ?? decision('stay'),
@@ -137,25 +137,25 @@ async function demo({ agents = demoAgents, search, clock, failWelcome = false } 
         events: [], triggerRequests: [], outerRequests: [], classifications: [], historyReviews: [], receipts: [] };
       const result = await workspace.execute({
         method: 'POST', path: '/api/chat', scope, snapshot,
-        body: { ...scope, text, sessionId: sessions.get(agentId), requestId },
+        body: { ...scope, text, sessionId, requestId },
       }, { emit: event => turn.events.push(event) });
       const start = turn.events.find(event => event.type === 'start');
       assert.ok(start, result.value?.error);
       const terminal = turn.events.find(event => event.type === 'done' || event.type === 'error');
       assert.equal(terminal?.type, failContinuation ? 'error' : 'done', terminal?.message);
       snapshot = result.snapshot;
-      sessions.set(agentId, start.sessionId);
+      sessions.set(`${childId}:${agentId}`, start.sessionId);
       const saved = result.views[`/api/sessions/${start.sessionId}?${new URLSearchParams(scope)}`];
       const run = snapshot.tables.runs.find(row => row.request_id === requestId);
       assert.ok(run);
       return { ...turn, sessionId: start.sessionId, context: saved.context, messages: saved.messages, snapshot, run };
     },
     async newSession(agentId = currentMentor.id) {
-      const scope = { childId, agentId };
+      const scope = { childId: defaultChildId, agentId };
       const result = await workspace.execute({ method: 'POST', path: '/api/sessions', scope, snapshot, body: scope });
       assert.equal(result.status, 201, result.value?.error);
       snapshot = result.snapshot;
-      sessions.set(agentId, result.value.session.id);
+      sessions.set(`${defaultChildId}:${agentId}`, result.value.session.id);
       return result.value.session.id;
     },
   };
@@ -568,8 +568,127 @@ test('the status route keeps the card live at fourteen minutes and the history g
   assert.deepEqual((await app.request('GET', path, source)).value.mentorCards, [{ ...card, state: 'expired' }]);
 });
 
+test('an unconfirmed handoff cannot arrive once the source session expires', async () => {
+  let now = Date.parse('2026-11-24T02:00:00.000Z');
+  const app = await demo({ clock: () => new Date(now) });
+  const source = currentMentor.id;
+  const target = duoluo.id;
+  const first = await app.send('帮我找多罗，我想练英文点餐。', { decision: englishOffer() });
+  const card = offers(first)[0].card;
+  now += 15 * 60_000 - 1;
+  const prepared = await app.request('POST', '/api/mentor-handoffs', source, { cardId: card.id });
+  assert.equal(prepared.status, 200);
+  const targetSessionId = prepared.value.session.id;
+  const arrivePath = `/api/mentor-handoffs/${card.id}/arrive`;
+
+  now += 1;
+  const atDeadline = await app.request('POST', arrivePath, target, { sessionId: targetSessionId });
+  assert.equal(atDeadline.status, 409);
+  now += 36 * 60 * 60_000;
+  const lateRetry = await app.request('POST', arrivePath, target, { sessionId: targetSessionId });
+  assert.equal(lateRetry.status, 409);
+  assert.equal(app.welcomeRequests.length, 0);
+  const sourceHistory = (await app.request('GET', `/api/sessions/${first.sessionId}`, source)).value;
+  assert.deepEqual(sourceHistory.mentorCards, [{ ...card, state: 'expired' }]);
+  const targetHistory = await app.request('GET', `/api/sessions/${targetSessionId}`, target);
+  assert.deepEqual(targetHistory.value.messages, []);
+  assert.equal(targetHistory.snapshot.tables.sessions.find(session => session.id === targetSessionId).mentor_handoff, null);
+});
+
+test('first handoff arrival starts the empty target deadline and the first user message renews it', async () => {
+  const minute = 60_000;
+  let now = Date.parse('2026-11-24T02:00:00.000Z');
+  const app = await demo({ clock: () => new Date(now) });
+  const source = currentMentor.id;
+  const target = duoluo.id;
+  const first = await app.send('帮我找多罗，我想练英文点餐。', { decision: englishOffer() });
+  const cardId = offers(first)[0].card.id;
+  now += minute;
+  const prepared = await app.request('POST', '/api/mentor-handoffs', source, { cardId });
+  assert.equal(prepared.status, 200);
+  const sessionId = prepared.value.session.id;
+  const statusPath = `/api/sessions/${sessionId}/status`;
+  const arrivePath = `/api/mentor-handoffs/${cardId}/arrive`;
+  assert.equal((await app.request('GET', statusPath, target)).value.expiresAt, null);
+
+  now += minute;
+  const deadline = now + 15 * minute;
+  const arrival = await app.request('POST', arrivePath, target, { sessionId });
+  assert.equal(arrival.status, 200, arrival.value.error);
+  assert.ok(arrival.value.welcomeMessageId);
+  assert.equal((await app.request('GET', statusPath, target)).value.expiresAt, new Date(deadline).toISOString());
+
+  now += 7 * minute;
+  const retry = await app.request('POST', arrivePath, target, { sessionId });
+  assert.equal(retry.value.welcomeMessageId, arrival.value.welcomeMessageId);
+  assert.equal(app.welcomeRequests.length, 1);
+  assert.equal((await app.request('GET', statusPath, target)).value.expiresAt, new Date(deadline).toISOString());
+
+  const nextOffer = await app.send('帮我找多罗，我还想练英文点餐。', { decision: englishOffer() });
+  const nextCardId = offers(nextOffer)[0].card.id;
+  const nextTransfer = await app.request('POST', '/api/mentor-handoffs', source, { cardId: nextCardId });
+  assert.equal(nextTransfer.value.session.id, sessionId);
+  const nextArrival = await app.request('POST', `/api/mentor-handoffs/${nextCardId}/arrive`, target, { sessionId });
+  assert.equal(nextArrival.status, 200);
+  assert.equal((await app.request('GET', statusPath, target)).value.expiresAt, new Date(deadline).toISOString());
+
+  now = deadline - 1;
+  assert.equal((await app.request('GET', statusPath, target)).value.status, 'open');
+  const reply = await app.send('你好，我想学怎么说我要一杯果汁。', { agentId: target, sessionId, trigger: 'skip' });
+  assert.equal(reply.sessionId, sessionId);
+  const renewedDeadline = now + 15 * minute;
+  now = deadline;
+  const renewed = (await app.request('GET', statusPath, target)).value;
+  assert.equal(renewed.status, 'open');
+  assert.equal(renewed.expiresAt, new Date(renewedDeadline).toISOString());
+  now = renewedDeadline;
+  const expired = (await app.request('GET', statusPath, target)).value;
+  assert.equal(expired.status, 'closed');
+  assert.equal(expired.expiresAt, new Date(renewedDeadline).toISOString());
+});
+
+test('a target without a welcome reply still expires and carries the handoff into the first user turn', async () => {
+  const minute = 60_000;
+  let now = Date.parse('2026-11-24T02:00:00.000Z');
+  const app = await demo({ clock: () => new Date(now), failWelcome: true });
+  const source = currentMentor.id;
+  const target = duoluo.id;
+  const first = await app.send('帮我找多罗，我想练英文点餐。', { decision: englishOffer() });
+  const cardId = offers(first)[0].card.id;
+  const prepared = await app.request('POST', '/api/mentor-handoffs', source, { cardId });
+  assert.equal(prepared.status, 200);
+  const sessionId = prepared.value.session.id;
+  const statusPath = `/api/sessions/${sessionId}/status`;
+  const arrivePath = `/api/mentor-handoffs/${cardId}/arrive`;
+  now += minute;
+  const deadline = now + 15 * minute;
+  const arrival = await app.request('POST', arrivePath, target, { sessionId });
+  assert.equal(arrival.status, 200);
+  assert.equal(arrival.value.welcomePending, true);
+  assert.equal((await app.request('GET', statusPath, target)).value.expiresAt, new Date(deadline).toISOString());
+
+  now = deadline - 1;
+  assert.equal((await app.request('GET', statusPath, target)).value.status, 'open');
+  now = deadline;
+  const retry = await app.request('POST', arrivePath, target, { sessionId });
+  assert.equal(retry.status, 200);
+  assert.equal(retry.value.session.id, sessionId);
+  assert.equal(retry.value.session.status, 'closed');
+  assert.equal(retry.value.welcomeMessageId, null);
+  assert.equal(retry.value.welcomePending, undefined);
+  assert.equal(app.welcomeRequests.length, 1);
+  assert.equal(retry.snapshot.tables.jobs.some(job => job.session_id === sessionId), false);
+
+  const reply = await app.send('布爸说我可以和你练点餐，怎么开始？', { agentId: target, sessionId, trigger: 'skip' });
+  assert.notEqual(reply.sessionId, sessionId);
+  assert.match(reply.outerRequests[0].background.content, /练英文点餐/);
+  const replacement = (await app.request('GET', `/api/sessions/${reply.sessionId}/status`, target)).value;
+  assert.equal(replacement.expiresAt, new Date(now + 15 * minute).toISOString());
+});
+
 test('a successful arrival welcomes once, carries only relevant progress, and supplies private source history across sessions', async () => {
   let now = Date.parse('2026-11-24T02:00:00.000Z');
+  const deadline = new Date(now + 15 * 60_000).toISOString();
   const app = await demo({ clock: () => new Date(now) });
   const source = currentMentor.id;
   const target = duoluo.id;
@@ -577,6 +696,7 @@ test('a successful arrival welcomes once, carries only relevant progress, and su
   const first = await app.send('帮我找多罗，我想练英文点餐。', { decision: englishOffer() });
   const card = offers(first)[0].card;
   const followup = await app.send('我会说 I’d like a sandwich 了。');
+  now += 60_000;
   const prepared = await app.request('POST', '/api/mentor-handoffs', source, { cardId: card.id });
   assert.equal(prepared.status, 200);
   assert.equal(prepared.value.agentId, target);
@@ -589,6 +709,8 @@ test('a successful arrival welcomes once, carries only relevant progress, and su
   assert.ok(arrival.value.welcomeMessageId);
   const repeated = await app.request('POST', arrivePath, target, { sessionId: existing.sessionId });
   assert.equal(repeated.value.welcomeMessageId, arrival.value.welcomeMessageId);
+  const targetStatus = await app.request('GET', `/api/sessions/${existing.sessionId}/status`, target);
+  assert.equal(targetStatus.value.expiresAt, deadline);
   assert.equal(app.welcomeRequests.length, 1);
   assert.equal(app.briefRequests.length, 1);
   const welcomeInput = app.welcomeRequests[0].messages.at(-1).content;
@@ -608,6 +730,10 @@ test('a successful arrival welcomes once, carries only relevant progress, and su
   assert.equal(Object.hasOwn(sourceHistory.mentorCards[0], 'brief'), false);
 
   now += 15 * 60_000;
+  const retryAfterExpiry = await app.request('POST', arrivePath, target, { sessionId: existing.sessionId });
+  assert.equal(retryAfterExpiry.status, 200);
+  assert.equal(retryAfterExpiry.value.welcomeMessageId, arrival.value.welcomeMessageId);
+  assert.equal(app.welcomeRequests.length, 1);
   const returned = await app.send('那句我还是不会。', { trigger: 'skip', reply: '和多罗练到哪一步啦？' });
   assert.notEqual(returned.sessionId, first.sessionId);
   assert.match(returned.outerRequests[0].background.content, /历史转介资料/);
@@ -705,11 +831,38 @@ test('a completed proactive card is recorded after helpful text and its history 
 
   const newSession = await app.newSession();
   const fresh = await app.send(englishPractice, { reply,
-    decision: proactive(duoluo, '练习用英语在咖啡店点餐', 'english-speaking') });
+    decision: proactive(duoluo, '练习用英语在咖啡店点餐', 'english-speaking'),
+    historyReview: { decision: 'stay', reason: '孩子在新会话继续原来的英语点餐练习。' } });
   assert.equal(fresh.sessionId, newSession);
   assert.notEqual(fresh.sessionId, first.sessionId);
-  assert.deepEqual(historyFor(fresh), []);
-  assert.deepEqual(offers(fresh).map(event => event.mentor.id), [duoluo.id]);
+  assert.equal(fresh.classifications[0].input.activeMentorCard, undefined);
+  assert.deepEqual(historyFor(fresh), [historyEntry(first, 3, 'expired')]);
+  assert.deepEqual(fresh.historyReviews[0].input.recommendationHistory, historyFor(fresh));
+  assert.equal(fresh.receipts[0].status, 'stay');
+  assert.deepEqual(offers(fresh), []);
+
+  const requested = await app.send('这次帮我找多罗，我想跟他接着练点餐。', { decision: englishOffer() });
+  assert.deepEqual(historyFor(requested), [historyEntry(first, 4, 'expired')]);
+  assert.deepEqual(requested.historyReviews, []);
+  assert.deepEqual(offers(requested).map(event => event.mentor.id), [duoluo.id]);
+  const oldSession = await app.request('GET', `/api/sessions/${first.sessionId}`, currentMentor.id);
+  assert.equal(oldSession.value.mentorCards[0].state, 'expired');
+});
+
+test('recommendation history is isolated by both child and source agent', async () => {
+  const app = await demo();
+  const first = await app.send('帮我找多罗，我想练英文点餐。', { decision: englishOffer() });
+  await app.newSession();
+  const otherSource = await app.send(englishPractice, { agentId: mofei.id });
+  assert.deepEqual(historyFor(otherSource), []);
+
+  const created = await app.request('POST', '/api/children', currentMentor.id, { name: '另一个孩子', age: 9 });
+  assert.equal(created.status, 201, created.value.error);
+  const otherChild = await app.send(englishPractice, { childId: created.value.child.id });
+  assert.deepEqual(historyFor(otherChild), []);
+
+  const sameScope = await app.send('刚才那个点餐句子怎么说来着？');
+  assert.deepEqual(historyFor(sameScope), [historyEntry(first, 0, 'expired')]);
 });
 
 test('the history reviewer can approve an independent new goal before two completed rounds', async () => {
