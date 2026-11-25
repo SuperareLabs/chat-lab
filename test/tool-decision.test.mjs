@@ -229,6 +229,73 @@ test('media above 65% supplies this turn’s delivery status and the scene befor
     trace.length = 0;
     activeCase = { kind, probability: 0.9, invalid: true, text: '测试参数不合格时的回复' };
     await send({ ...scope, text: activeCase.text, requestId: crypto.randomUUID() });
-    assert.deepEqual(trace, ['decision', 'plan', 'reply', 'reply_part', 'reply_part']);
+    assert.deepEqual(trace, ['decision', 'plan', 'plan', 'reply', 'reply_part', 'reply_part']);
   }
+});
+
+test('a scripted flower photo can repair its plan once before submitting it for generation', async t => {
+  const text = '院子里的粉色蔷薇开了，拍一张花给我看看，只拍花。';
+  const good = { should_send_image: true, template_id: 'SHOT_POV_SUBJECT',
+    primary_subject: { asset_id: null, action_or_state: 'pink roses in bloom' }, environment_context: 'a sunlit courtyard' };
+  const badSubject = { ...good, primary_subject: { asset_id: 'character', action_or_state: 'holding pink roses' },
+    environment_context: '洒满阳光的院子' };
+  const attachment = { kind: 'photo', id: 'd'.repeat(48) };
+  const cases = [
+    { name: 'empty plan repaired', plans: [{}, good], submissions: 1 },
+    { name: 'invalid POV subject and environment repaired', plans: [badSubject, good], submissions: 1 },
+    { name: 'second invalid plan stays undelivered', plans: [{}, badSubject], submissions: 0 },
+    { name: 'explicitly declining the photo needs no repair', plans: [{ should_send_image: false }], submissions: 0 },
+    { name: 'provider failure after a repair never resubmits the generation', plans: [{}, good], submissions: 1, providerFails: true },
+  ];
+  for (const { name, plans, submissions, providerFails } of cases) await t.test(name, async () => {
+    const requests = [];
+    const generations = [];
+    const events = [];
+    const agentId = 'flower-photo-test';
+    const workspace = createBrowserWorkspace({
+      defaultAgents: [{ id: agentId, name: '测试角色', definition: '喜欢花。', metadata: {} }],
+      defaultChildren: [{ name: '测试访客', age: 22, interests: [] }],
+      model: { name: 'photo-test', configured: true }, memoryModel: { configured: false },
+      toolDecision: {}, mentorTrigger: { model: 'test-trigger', async decide() {
+        return { decisions: { character_media: { choice: 'call' } }, mediaDecision: { status: 'succeeded',
+          anyToolProbability: 0.99, probabilities: [{ name: 'share_photo', probability: 0.98 }] } };
+      } },
+      provider: { async chat({ messages }) {
+        if (messages[0].content.includes('【Share Photo】')) {
+          requests.push(messages);
+          return { content: JSON.stringify(plans[requests.length - 1]), toolCalls: [] };
+        }
+        return { content: JSON.stringify({ messages: ['粉色蔷薇开得真好。'] }), toolCalls: [] };
+      } },
+      characterMedia: { available: kind => kind === 'photo', async generate(kind, { photoPlan }) {
+        generations.push({ kind, template: photoPlan.template.template_id, subject: photoPlan.primary, environment: photoPlan.environment });
+        if (providerFails) return { ok: false, error: 'synthetic generation failure' };
+        return { ok: true, attachment };
+      } },
+    });
+    const boot = await workspace.execute({ method: 'GET', path: '/api/state' });
+    const scope = { childId: boot.value.children[0].id, agentId };
+    const turn = await workspace.execute({ method: 'POST', path: '/api/chat', scope, snapshot: boot.snapshot,
+      body: { ...scope, text, requestId: crypto.randomUUID() } }, { emit: event => events.push(event) });
+    assert.equal(turn.status, 200);
+    assert.ok(events.some(event => event.type === 'done'));
+    assert.equal(requests.length, plans.length);
+    for (const input of requests) assert.ok(input.some(message => message.content.includes(text)), 'keep the original flower request');
+    const purposes = ['character-media-plan', 'character-media-plan-repair'].slice(0, plans.length);
+    const context = JSON.parse(turn.snapshot.tables.sessions[0].context);
+    assert.deepEqual(context.modelRequests.map(request => request.purpose).filter(Boolean), purposes);
+    const planCharges = turn.snapshot.tables.usage_records.filter(row => row.kind === 'chat' && row.record_key.includes(':character-media-plan'));
+    assert.deepEqual(planCharges.map(row => row.record_key.split(':').at(-1)).sort(), purposes);
+    assert.deepEqual(context.toolCalls.map(call => call.name), ['share_photo']);
+    const attachments = events.filter(event => event.type === 'character_media').map(event => event.attachment);
+    assert.deepEqual(attachments, submissions && !providerFails ? [attachment] : []);
+    assert.equal(generations.length, submissions);
+    if (submissions) {
+      assert.equal(generations[0].kind, 'photo');
+      assert.equal(generations[0].template, good.template_id);
+      assert.equal(generations[0].subject.id, null);
+      assert.equal(generations[0].subject.text, good.primary_subject.action_or_state);
+      assert.equal(generations[0].environment, good.environment_context);
+    }
+  });
 });

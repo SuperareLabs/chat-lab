@@ -418,6 +418,9 @@ test('the final media reply matches the attachment that was actually delivered',
   const source = '这张是生成的双塔示意图，不能用来确认实景。';
   const verification = '如果想确认实景，可以查查成都双子塔的官方实拍图。';
   const tower = '双塔的灯光沿着楼身亮起来。';
+  const observation = '先找云边最亮的一圈，再看看阴影往哪边移。';
+  const guidance = '小林可以陪你一起练习观察云。';
+  const failedStatus = /这轮也没拍成|拍照这轮没发出去|没能发出|没发出去|没拍成|发不了|拍不了|发送失败|生成失败|补发|发给你[了啦]|照片给你|发过去了/u;
   const cases = [
     { title: 'the delivered Chengdu photo keeps the weather and the source of the illustration', kind: 'photo',
       reply: [weather, '双子塔照片这就得看系统能不能给我了——布爸没拍成都的相机，先跟你说实话。',
@@ -426,9 +429,15 @@ test('the final media reply matches the attachment that was actually delivered',
     { title: 'a delivered video cannot be described as impossible to make', kind: 'video',
       reply: [tower, '那条视频我这边做不出来，抱歉。'], kept: [tower], rejected: /做不出来|发不出来|抱歉/u },
     { title: 'a failed photo cannot be announced as delivered', kind: 'photo', failed: true,
-      reply: ['发给你了。', weather], kept: [weather], rejected: /发给你了|照片给你|发过去了/u },
-    { title: 'a failed photo gets a truthful fallback when nothing else was said', kind: 'photo', failed: true,
-      reply: ['照片发给你了。'], kept: ['这次没能发出照片。'], rejected: /发给你了|照片给你|发过去了/u },
+      reply: ['发给你了。', weather], kept: [weather] },
+    { title: 'a failed photo still gets a conversational reply when only a delivery claim was drafted', kind: 'photo', failed: true,
+      reply: ['照片发给你了。'], kept: [] },
+    { title: 'a failed photo leaves the weather, observing tip and mentor offer intact', kind: 'photo', failed: true, mentor: true,
+      text: '我想学观察云，帮我找位老师，再给我看看成都今天的云。',
+      reply: [weather, '这轮也没拍成，' + observation, guidance], kept: [weather, observation, guidance] },
+    { title: 'a failed camera status can be removed from the middle of useful advice', kind: 'photo', failed: true,
+      reply: ['想观察双塔的轮廓，拍照这轮没发出去，可以在傍晚看看西侧的天空。'],
+      kept: ['想观察双塔的轮廓，', '可以在傍晚看看西侧的天空。'] },
     { title: 'choosing the photo does not mark an unattempted video as failed', kind: 'photo', both: true,
       reply: ['这张照片给你。', '那条视频我这边做不出来，抱歉。', tower], kept: [tower],
       rejected: /做不出|发不了|没能发|没发成|没发出|失败|抱歉/u },
@@ -451,8 +460,9 @@ test('the final media reply matches the attachment that was actually delivered',
         : { should_send_video: true, template_id: 'VID_POV_INTERACT',
           primary_subject: { asset_id: null, action_or_state: 'light moving up the twin towers' }, environment_and_sound: 'night wind', spoken_line: null },
     });
-    const text = both ? '发张双子塔照片，再发一段视频。' : kind === 'photo' ? '给我成都天气和双子塔的照片。' : '发一段双子塔的视频。';
-    const turn = await app.send(text, { trigger: 'skip', mediaChoice: 'call', reply: example.reply,
+    const text = example.text ?? (both ? '发张双子塔照片，再发一段视频。' : kind === 'photo' ? '给我成都天气和双子塔的照片。' : '发一段双子塔的视频。');
+    const turn = await app.send(text, { trigger: example.mentor ? 'call' : 'skip',
+      ...(example.mentor ? { decision: proactive(xiaolin, '我想学观察云', 'nature-observation') } : {}), mediaChoice: 'call', reply: example.reply,
       mediaDecision: { status: 'succeeded', anyToolProbability: 0.98, probabilities: [
         { name: 'share_photo', probability: kind === 'photo' ? 0.99 : 0.8 }, { name: 'share_video', probability: kind === 'video' ? 0.99 : 0.8 },
       ] } });
@@ -461,15 +471,18 @@ test('the final media reply matches the attachment that was actually delivered',
     assert.equal(turn.triggerRequests.length, 1);
     assert.equal(turn.outerRequests.length, 1);
     assert.equal(turn.context.modelRequests.filter(request => request.purpose === 'character-media-plan').length, 1);
-    assert.deepEqual(turn.context.toolCalls.map(call => call.name), [name]);
+    assert.deepEqual(turn.context.toolCalls.map(call => call.name).sort(), example.mentor ? ['find_mentor', name] : [name]);
+    assert.deepEqual(offers(turn).map(event => event.mentor.id), example.mentor ? [xiaolin.id] : []);
     assert.deepEqual(turn.snapshot.tables.usage_records.filter(row => row.run_id === turn.run.id && row.kind === 'character_media')
       .map(row => row.tool_name), [name]);
     assert.deepEqual(turn.events.filter(event => event.type === 'character_media').map(event => event.attachment), failed ? [] : [attachment]);
     const output = parts(turn).join('\n\n');
     assert.equal(turn.messages.at(-1).text, output);
     assert.equal(turn.messages.at(-1).attachment?.kind, failed ? undefined : kind);
+    assert.ok(output.trim(), 'the chat should still respond to the user');
+    if (failed) assert.doesNotMatch(output, /^(?:抱歉|不好意思|对不起)[。！]?$/u);
     for (const fact of example.kept) assert.ok(output.includes(fact), 'missing detail: ' + fact);
-    assert.doesNotMatch(output, example.rejected);
+    assert.doesNotMatch(output, example.rejected ?? failedStatus);
   });
 });
 
