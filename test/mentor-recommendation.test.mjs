@@ -52,13 +52,13 @@ const triggerUsageFor = turn => turn.snapshot.tables.usage_records
   .filter(row => row.run_id === turn.run.id && row.kind === 'mentor_trigger')
   .map(row => JSON.parse(row.entry));
 
-async function demo({ agents = demoAgents, search, clock, failWelcome = false } = {}) {
+async function demo({ agents = demoAgents, search, clock, failWelcome = false, characterMedia, toolDecision, mediaPlan } = {}) {
   let turn;
   const welcomeRequests = [];
   const briefRequests = [];
   const workspace = createBrowserWorkspace({
     defaultAgents: agents, defaultChildren: demoChildren, sharedPrompts: loadSharedPrompts(),
-    model: { name: 'test', configured: true }, memoryModel: { configured: false }, search, clock,
+    model: { name: 'test', configured: true }, memoryModel: { configured: false }, search, clock, characterMedia, toolDecision,
     mentorTrigger: { model: 'test-trigger', async decide(input, { signal }) {
       assert.equal(signal.aborted, false);
       turn.triggerRequests.push(input);
@@ -67,10 +67,12 @@ async function demo({ agents = demoAgents, search, clock, failWelcome = false } 
       const decisions = { find_mentor: { choice, reason: turn.triggerReason } };
       if (input.questions.search_web) decisions.search_web = { choice: turn.searchChoice, reason: turn.searchReason };
       if (input.questions.calculate) decisions.calculate = { choice: turn.calculateChoice };
-      return { decisions,
+      if (input.questions.character_media) decisions.character_media = { choice: turn.mediaChoice };
+      return { decisions, ...(turn.mediaDecision ? { mediaDecision: turn.mediaDecision } : {}),
         receipt: { model: 'test-trigger', usage: { input_tokens: 100, output_tokens: 0 } } };
     } },
     provider: { async chat({ messages, tools, toolChoice }) {
+      if (mediaPlan && /【Share (?:Photo|Video)】/u.test(messages[0].content)) return response(JSON.stringify(mediaPlan(messages)));
       if (messages[0].content.includes('【主动欢迎】')) {
         welcomeRequests.push({ messages, tools });
         if (failWelcome) throw new Error('synthetic welcome failure');
@@ -101,11 +103,12 @@ async function demo({ agents = demoAgents, search, clock, failWelcome = false } 
         turn.receipts = messages.filter(message => message.role === 'tool').map(message => JSON.parse(message.content));
         turn.offersBeforeContinuation ??= offers(turn).length;
       }
-      const nativeTool = typeof turn.nativeTool === 'function' ? turn.nativeTool(toolChoice) : turn.nativeTool;
+      const nativeTool = typeof turn.nativeTool === 'function' ? turn.nativeTool(toolChoice, messages) : turn.nativeTool;
       if (nativeTool && !messages.some(message => message.role === 'tool' && message.tool_call_id === nativeTool.id)) {
         return response('', [nativeTool], 'tool_calls');
       }
-      const replyParts = Array.isArray(turn.reply) ? turn.reply : [turn.reply];
+      const reply = typeof turn.reply === 'function' ? turn.reply(messages) : turn.reply;
+      const replyParts = Array.isArray(reply) ? reply : [reply];
       return response(JSON.stringify({ messages: replyParts }), [], turn.failContinuation ? 'length' : 'stop');
     } },
   });
@@ -132,13 +135,13 @@ async function demo({ agents = demoAgents, search, clock, failWelcome = false } 
         calculateChoice = 'skip', requestId = crypto.randomUUID(), sessionId = sessions.get(`${childId}:${agentId}`) } = options;
       const scope = { childId, agentId };
       turn = { reply, nativeTool, failContinuation, trigger, triggerReason, searchChoice, searchReason, calculateChoice,
-        decision: options.decision ?? decision('stay'),
+        mediaChoice: options.mediaChoice, mediaDecision: options.mediaDecision, decision: options.decision ?? decision('stay'),
         historyReview: options.historyReview ?? { decision: 'proceed', reason: '可以继续推荐。' },
         events: [], triggerRequests: [], outerRequests: [], classifications: [], historyReviews: [], receipts: [] };
       const result = await workspace.execute({
         method: 'POST', path: '/api/chat', scope, snapshot,
         body: { ...scope, text, sessionId, requestId },
-      }, { emit: event => turn.events.push(event) });
+      }, { emit(event) { turn.events.push(event); options.onEvent?.(event); } });
       const start = turn.events.find(event => event.type === 'start');
       assert.ok(start, result.value?.error);
       const terminal = turn.events.find(event => event.type === 'done' || event.type === 'error');
@@ -174,6 +177,119 @@ test('replaying a turn does not repeat the mentor check or mark the main reply a
   assert.deepEqual(replay.outerRequests, []);
   assert.deepEqual(replay.events.filter(event => event.type === 'reply_part'),
     original.events.filter(event => event.type === 'reply_part'));
+});
+
+for (const kind of ['photo', 'video']) {
+  const succeeds = kind === 'photo';
+  const scenario = succeeds ? 'one routing request searches before preparing a calculation, a mentor card and a photo'
+    : 'a failed video still lets the final reply use the search and calculation';
+  test(scenario, async () => {
+    const listing = { title: 'Museum café menu', url: 'https://example.com/menu', snippet: 'The cobalt dessert costs 37 credits.' };
+    const attachment = { kind, id: 'a'.repeat(48) };
+    const generated = [], earlyOutput = [];
+    let searched = 0, separateDecisions = 0, finalReplies = 0;
+    const app = await demo({
+      toolDecision: { async evaluate() { separateDecisions++; throw new Error('unexpected separate routing request'); } },
+      search: { configured: true, async search() { searched++; return { results: [listing] }; } },
+      mediaPlan(messages) {
+        assert.equal(searched, 1);
+        assert.ok(JSON.stringify(messages).includes(listing.snippet), 'the media plan must receive the retrieved fact');
+        const subject = { asset_id: null, action_or_state: 'a cobalt dessert displayed on the counter' };
+        return succeeds ? { type: 'json_object', should_send_image: true, template_id: 'SHOT_POV_SUBJECT',
+          environment_context: 'daylight at the museum café', primary_subject: subject }
+          : { type: 'json_object', should_send_video: true, template_id: 'VID_POV_INTERACT',
+            environment_and_sound: 'sunlit counter with quiet chatter', primary_subject: subject, spoken_line: null };
+      },
+      characterMedia: { available: () => true, async generate(selected) {
+        generated.push(selected);
+        return succeeds ? { ok: true, attachment } : { ok: false, error: 'synthetic media failure' };
+      } },
+    });
+    const text = '我想练英文点餐。查下博物馆咖啡厅今日甜品，算三份多少钱，再给我看看你那里的样子。';
+    const requestId = crypto.randomUUID();
+    const reply = '菜单上每份 37，三份一共 111。';
+    const turn = await app.send(text, {
+      requestId, triggerReason: 'outside_specialty_research', searchChoice: 'call', calculateChoice: 'call', mediaChoice: 'call',
+      mediaDecision: { status: 'succeeded', anyToolProbability: 0.95, probabilities: [
+        { name: 'share_photo', probability: succeeds ? 0.9 : 0.5 }, { name: 'share_video', probability: succeeds ? 0.7 : 0.6 },
+      ] },
+      decision: proactive(duoluo, '我想练英文点餐', 'english-speaking'),
+      nativeTool(choice, messages) {
+        const name = choice?.function.name;
+        if (name === 'search_web') return { id: 'lookup', type: 'function', function: { name, arguments: '{"query":"museum café menu"}' } };
+        if (name === 'calculate') {
+          const price = /costs (\d+) credits/u.exec(JSON.stringify(messages))?.[1];
+          assert.equal(price, '37', 'construct the expression from the latest search');
+          return { id: 'total', type: 'function', function: { name, arguments: JSON.stringify({ expression: price + '*3' }) } };
+        }
+      },
+      reply(messages) {
+        const input = JSON.stringify(messages);
+        assert.ok(input.includes(listing.snippet));
+        assert.ok(input.includes('111'));
+        const delivery = messages[1].content.split('【本轮角色影像结果】\n')[1];
+        assert.ok(delivery, 'the final reply must see the media outcome');
+        const { media, sent } = JSON.parse(delivery.split('\n')[0]);
+        assert.deepEqual({ media, sent }, { media: kind, sent: succeeds });
+        finalReplies++;
+        return reply;
+      },
+      onEvent(event) {
+        if (!finalReplies && ['delta', 'reply_part', 'character_media', 'mentor_recommendation'].includes(event.type)) earlyOutput.push(event.type);
+      },
+    });
+    assert.equal(turn.triggerRequests.length, 1);
+    assert.ok(turn.triggerRequests[0].questions.character_media);
+    assert.equal(separateDecisions, 0);
+    assert.deepEqual(generated, [kind]);
+    assert.deepEqual(earlyOutput, []);
+    assert.equal(finalReplies, 1);
+    assert.deepEqual(parts(turn), [reply]);
+    assert.deepEqual(turn.outerRequests[0].tools.map(tool => tool.function.name), ['search_web']);
+    assert.deepEqual(turn.classifications[0].input.currentSearchEvidence, [{ title: listing.title, snippet: listing.snippet }]);
+    const calls = turn.context.toolCalls.map(call => call.name);
+    assert.equal(calls[0], 'search_web');
+    assert.deepEqual(calls.slice(1).sort(), ['calculate', 'find_mentor', 'share_' + kind]);
+    const received = turn.events.filter(event => event.type === 'character_media');
+    assert.deepEqual(received, succeeds ? [{ type: 'character_media', attachment }] : []);
+    const card = offers(turn)[0]?.card;
+    assert.equal(card?.mentor.id, duoluo.id);
+    assert.equal(card.messageId, turn.messages.at(-1).id);
+    if (succeeds) {
+      const replay = await app.send(text, { requestId });
+      assert.equal(searched, 1);
+      assert.deepEqual(generated, ['photo']);
+      assert.deepEqual(replay.triggerRequests, []);
+      assert.deepEqual(replay.outerRequests, []);
+      assert.deepEqual(replay.events.filter(event => event.type === 'character_media'), received);
+      assert.deepEqual(replay.snapshot.tables.runs, turn.snapshot.tables.runs);
+      const reopened = await app.request('GET', '/api/sessions/' + turn.sessionId, currentMentor.id);
+      assert.deepEqual(reopened.value.mentorCards, [card]);
+      assert.deepEqual(reopened.value.messages.at(-1).attachment, attachment);
+    }
+  });
+}
+
+test('the global probability must exceed 65% before any selected tool runs', async () => {
+  let separateDecisions = 0;
+  const app = await demo({
+    search: { configured: true, async search() { assert.fail('unexpected search'); } },
+    characterMedia: { available: () => true, async generate() { assert.fail('unexpected attachment'); } },
+    toolDecision: { async evaluate() { separateDecisions++; throw new Error('unexpected separate routing request'); } },
+  });
+  for (const probability of [0.65, 0.3]) {
+    const turn = await app.send('继续聊吧。', {
+      trigger: 'call', searchChoice: 'call', calculateChoice: 'call', mediaChoice: 'call',
+      mediaDecision: { status: 'succeeded', anyToolProbability: probability, probabilities: [{ name: 'share_photo', probability: 1 }] },
+      reply: '好呀。',
+    });
+    assert.equal(turn.triggerRequests.length, 1);
+    assert.deepEqual(turn.context.toolCalls, []);
+    assert.deepEqual(turn.classifications, []);
+    assert.deepEqual(turn.outerRequests.map(request => request.tools), [[]]);
+    assert.deepEqual(parts(turn), ['好呀。']);
+  }
+  assert.equal(separateDecisions, 0);
 });
 
 test('the trigger can route the same topic share differently for two specialties', async () => {

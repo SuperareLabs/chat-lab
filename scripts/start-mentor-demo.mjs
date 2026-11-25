@@ -11,7 +11,7 @@ const mentorTrigger = key ? createToolDecisionClient(TOOL_DECISION_PROVIDERS.jev
 const lab = createLabServer({
   port, host, storageMode: 'browser', localNoAuth: true, catalogPath: ':memory:',
   publicOrigins: [`http://${host}:${port}`], defaultAgents: demoAgents, defaultChildren: demoChildren,
-  mentorTrigger, describeArchitecture: describeDemoArchitecture,
+  mentorTrigger, orchestrateTools: true, describeArchitecture: describeDemoArchitecture,
 });
 await lab.listen(port, host);
 console.log(`导师推荐 Demo 已启动  http://${host}:${port}/`);

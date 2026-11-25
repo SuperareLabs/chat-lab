@@ -64,6 +64,23 @@ test('creation retries are idempotent by creator and request, including after ed
   } finally { catalog.close(); }
 });
 
+test('creating, editing and clearing a public role voice preserve its revision and request rules', t => {
+  const catalog = new PublicCatalog();
+  t.after(() => catalog.close());
+  const { agent } = create(catalog, 'voice-request', { videoVoiceId: ' S_testVoice ' });
+  assert.equal(catalog.list().agents[0].metadata.videoVoiceId, 'S_testVoice');
+  assert.equal(create(catalog, 'voice-request', { videoVoiceId: 'S_testVoice' }).agent.id, agent.id);
+  assert.throws(() => create(catalog, 'voice-request', { videoVoiceId: 'S_other' }), error => error.status === 409);
+  const fields = { name: agent.name, definition: agent.definition };
+  const saved = catalog.update(agent.id, { ...fields, revision: 1 }, { ownerKey });
+  assert.equal(saved.agent.videoVoiceId, 'S_testVoice');
+  const cleared = catalog.update(agent.id, { ...fields, revision: 2, videoVoiceId: '' }, { ownerKey });
+  assert.equal(cleared.agent.videoVoiceId, undefined);
+  assert.equal(catalog.list().agents[0].metadata.videoVoiceId, undefined);
+  assert.throws(() => catalog.update(agent.id, { ...fields, revision: 3, videoVoiceId: 'invalid id' }, { ownerKey }),
+    error => error.status === 400);
+});
+
 test('only the owning browser may edit or delete and stale revisions cannot overwrite changes', () => {
   const catalog = new PublicCatalog();
   try {

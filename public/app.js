@@ -5,8 +5,8 @@ import { replyMessages } from './reply-layout.js';
 const el = id => document.getElementById(id);
 const ui = Object.fromEntries([
   'agent-select', 'agent-select-avatar', 'agent-select-label', 'child-select', 'session-select', 'new-child', 'new-session', 'agent-avatar',
-  'agent-name', 'agent-description', 'messages', 'chat-empty', 'chat-empty-title', 'chat-empty-description',
-  'chat-form', 'chat-input', 'send-button', 'model-status', 'chat-status', 'composer-hint', 'session-usage',
+  'agent-name', 'agent-description', 'messages', 'chat-empty', 'chat-empty-title',
+  'chat-form', 'chat-input', 'send-button', 'model-status', 'chat-status', 'session-usage',
   'context-content', 'memory-content', 'child-dialog', 'child-form', 'child-name', 'child-age',
   'child-interests', 'child-error', 'child-cancel', 'app-error', 'context-toggle', 'memory-toggle',
   'context-panel', 'memory-panel', 'new-agent', 'clear-memory', 'guide-open', 'logout',
@@ -19,10 +19,12 @@ const state = {
   editorSaving: false, queueSaving: false, authenticated: false,
   pendingMessages: [], pendingTimer: null,
   memorySignature: null, memoryOpen: new Set(), memoryDetails: new Map(), memoryData: null, memoryFilter: 'active', polling: false,
-  sessionUsage: null, liveToolCalls: null,
+  sessionUsage: null, liveToolCalls: null, availableTools: null,
   catalogRevision: null, catalogAvailable: false, catalogAgents: [],
 };
 const selectionKey = 'croco-lab-v1.selection';
+const workspaceModeKey = 'croco-lab-v1.workspace-mode';
+let workspaceMode = 'demo';
 let workspaceClient = null;
 let localSelection = {};
 let bootstrapSerial = 0;
@@ -90,11 +92,12 @@ function installAgentEditor({ canOpen, onSaved, onBusyChanged = () => {},
   readAgent = id => api(`/api/agents/${encodeURIComponent(id)}`),
   writeAgent = (id, body) => api(id ? `/api/agents/${encodeURIComponent(id)}` : '/api/agents', body, id ? 'PATCH' : 'POST'),
   getNote = () => '' }) {
-  const fields = Object.fromEntries(['title', 'form', 'name', 'definition', 'note', 'error', 'reload', 'cancel', 'save']
+  const fields = Object.fromEntries(['title', 'form', 'name', 'definition', 'voice-id', 'note', 'error', 'reload', 'cancel', 'save']
     .map(key => [key, el(`agent-editor-${key}`)]));
   const dialog = el('agent-editor');
   let editingId = '';
   let revision;
+  let savedVoiceId = '';
   let loading = false;
   let saving = false;
   let conflicted = false;
@@ -107,7 +110,7 @@ function installAgentEditor({ canOpen, onSaved, onBusyChanged = () => {},
   }
 
   function renderControls() {
-    fields.name.disabled = fields.definition.disabled = loading || saving || Boolean(pendingSaved);
+    fields.name.disabled = fields.definition.disabled = fields['voice-id'].disabled = loading || saving || Boolean(pendingSaved);
     fields.save.disabled = loading || saving || conflicted || Boolean(editingId && revision == null);
     fields.cancel.disabled = saving;
     fields.reload.disabled = loading || saving;
@@ -129,6 +132,7 @@ function installAgentEditor({ canOpen, onSaved, onBusyChanged = () => {},
       }
       fields.name.value = agent.name;
       fields.definition.value = agent.definition;
+      fields['voice-id'].value = savedVoiceId = agent.videoVoiceId || '';
       revision = agent.revision;
       conflicted = false;
       fields.reload.hidden = true;
@@ -150,6 +154,7 @@ function installAgentEditor({ canOpen, onSaved, onBusyChanged = () => {},
     fields.form.reset();
     editingId = id;
     revision = undefined;
+    savedVoiceId = '';
     loading = false;
     conflicted = false;
     pendingSaved = null;
@@ -168,6 +173,7 @@ function installAgentEditor({ canOpen, onSaved, onBusyChanged = () => {},
     if (loading || saving || conflicted || !dialog.open) return;
     const name = fields.name.value.trim();
     const definition = fields.definition.value;
+    const videoVoiceId = fields['voice-id'].value.trim();
     if (!pendingSaved && (!name || !definition.trim())) {
       errorMessage('请填写名称和角色设定。');
       (!name ? fields.name : fields.definition).focus();
@@ -184,7 +190,8 @@ function installAgentEditor({ canOpen, onSaved, onBusyChanged = () => {},
     renderControls();
     try {
       if (!pendingSaved) {
-        const result = await writeAgent(editingId, { name, definition, ...(editingId ? { revision } : {}) });
+        const result = await writeAgent(editingId, { name, definition, ...(videoVoiceId !== savedVoiceId ? { videoVoiceId } : {}),
+          ...(editingId ? { revision } : {}) });
         if (!result.agent?.id) throw new Error('保存结果不完整，请重新载入角色列表。');
         pendingSaved = { agent: result.agent, created: !editingId };
       }
@@ -275,8 +282,8 @@ function renderSelectors() {
     ui['agent-avatar'].hidden = !avatar;
     ui['agent-avatar'].classList.toggle('is-fallback', avatar === fallbackAvatar);
   }
-  put('agent-name', selected?.name || '选择 Agent');
-  put('agent-description', selected?.description || selected?.definition?.replace(/\s+/g, ' ').slice(0, 72) || '');
+  put('agent-name', selected?.name || '选择角色');
+  put('agent-description', selected?.description || selected?.card?.role || '');
   const modelName = state.model.name || '聊天模型';
   const text = state.model.mode === 'demo' ? `演示模式 · ${modelName}`
     : state.model.configured ? modelName : (state.agents.length ? '模型尚未配置' : '正在连接');
@@ -322,7 +329,7 @@ function updateControls() {
 }
 
 
-function chatMessage(role, text, animate = false, replyParts) {
+function chatMessage(role, text, animate = false, replyParts, attachment, attachmentAfterParts) {
   const assistant = role === 'assistant';
   const row = node('div', `message-row ${assistant ? 'is-assistant' : 'is-user'}`);
   if (assistant && imageForAgent()) {
@@ -334,7 +341,12 @@ function chatMessage(role, text, animate = false, replyParts) {
   }
   const stack = node('div', 'message-stack');
   const bubbles = assistant ? replyMessages(text, replyParts) : text === undefined ? [] : [text];
-  for (const part of bubbles) stack.append(messageBubble(part, animate));
+  const mediaPosition = Number.isInteger(attachmentAfterParts) ? Math.min(attachmentAfterParts, bubbles.length) : bubbles.length;
+  for (const [index, part] of bubbles.entries()) {
+    if (assistant && index === mediaPosition) appendCharacterMedia(stack, attachment);
+    stack.append(messageBubble(part, animate));
+  }
+  if (assistant && mediaPosition === bubbles.length) appendCharacterMedia(stack, attachment);
   row.append(stack);
   return { row, stack };
 }
@@ -431,11 +443,38 @@ function showMentorArrival(source, target, retry, confirmed = true) {
   card.focus({ preventScroll: true });
 }
 
-function appendTyping(stack) {
+function appendCharacterMedia(stack, attachment) {
+  if (!attachment || !['photo', 'video'].includes(attachment.kind) ||
+      typeof attachment.id !== 'string' || !/^[a-f0-9]{48}$/.test(attachment.id) ||
+      stack.querySelector('.message-character-media')) return;
+  const video = attachment.kind === 'video';
+  const frame = node('figure', 'message-character-media');
+  const element = node(video ? 'video' : 'img');
+  element.src = `/api/character-media/${attachment.kind}/${attachment.id}`;
+  if (video) {
+    element.controls = true;
+    element.playsInline = true;
+    element.preload = 'metadata';
+    element.setAttribute('aria-label', '聊天视频');
+  } else {
+    element.alt = '聊天图片';
+    element.loading = 'lazy';
+  }
+  frame.append(element);
+  stack.insertBefore(frame, stack.querySelector('.mentor-recommendation'));
+}
+
+function appendTyping(stack, label = '') {
   if (stack.querySelector('.message-typing')) return;
-  const typing = node('div', 'message-bubble message-typing');
-  typing.setAttribute('aria-hidden', 'true');
-  typing.append(node('span'), node('span'), node('span'));
+  const typing = node('div', 'message-bubble message-typing' + (label ? ' is-sending-media' : ''), label);
+  if (label) {
+    typing.setAttribute('role', 'status');
+    typing.setAttribute('aria-live', 'polite');
+  }
+  else {
+    typing.setAttribute('aria-hidden', 'true');
+    typing.append(node('span'), node('span'), node('span'));
+  }
   stack.insertBefore(typing, stack.querySelector('.mentor-recommendation'));
 }
 
@@ -462,15 +501,15 @@ function renderChat(messages = [], loading = false, { preserveScroll = false } =
   const empty = ui['chat-empty'];
   const mentorCardsByMessage = new Map((state.conversation?.mentorCards || []).map(card => [card.messageId, card]));
   const rows = messages.map(message => {
-    const { row, stack } = chatMessage(message.role, message.text ?? message.content ?? '', false, message.parts);
+    const { row, stack } = chatMessage(message.role, message.text ?? message.content ?? '', false,
+      message.parts, message.attachment, message.attachmentAfterParts);
     const card = message.role === 'assistant' && mentorCardsByMessage.get(message.id);
     if (card) appendMentorRecommendation(stack, card);
     return row;
   });
   if (empty) {
     empty.hidden = Boolean(rows.length);
-    put('chat-empty-title', loading ? '正在加载会话…' : !state.agents.length ? '创建第一个角色' : (state.childId ? `和${agent()?.name || 'Agent'}聊聊` : '选择用户，开始试聊'));
-    put('chat-empty-description', loading ? '' : !state.agents.length ? '点击“创建角色”，填写名称和角色设定。' : (state.childId ? '发一条消息，就可以开始这次对话。' : '右上角可以创建一个用户，填写姓名、年龄和兴趣。'));
+    put('chat-empty-title', loading ? '正在加载聊天…' : !state.agents.length ? '创建第一个角色' : (state.childId ? `和${agent()?.name || '角色'}聊聊` : '选择用户，开始聊天'));
     ui.messages.replaceChildren(...rows);
   } else if (rows.length) ui.messages.replaceChildren(...rows);
   else ui.messages.replaceChildren(node('div', 'panel-empty', state.childId ? '发一条消息开始聊天。' : '先选择或创建用户。'));
@@ -562,6 +601,20 @@ function usageComponentCost(usage, kind) {
   return uncertain ? amount > 0 ? '≥' + money(amount) : '待估' : money(amount);
 }
 
+function usd(microUsd) {
+  return 'US$' + (microUsd / 1_000_000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+}
+
+function videoBillingRows(bills) {
+  if (!bills.length) return [];
+  const settled = bills.filter(bill => Number.isSafeInteger(bill.actualMicroUsd));
+  const pending = bills.filter(bill => !Number.isSafeInteger(bill.actualMicroUsd));
+  return [
+    ...(settled.length ? [['Pika 视频实付', usd(settled.reduce((sum, bill) => sum + bill.actualMicroUsd, 0))]] : []),
+    ...(pending.length ? [['Pika 视频未结算估价', usd(pending.reduce((sum, bill) => sum + bill.estimatedMicroUsd, 0))]] : []),
+  ];
+}
+
 function usageMetricDetails(usage) {
   const observed = usage?.recordedCalls > 0;
   const partial = Boolean(usage && (usage.partial || usage.untrackedTurns > 0 || usage.untrackedMemoryJobs > 0 || usageUncertain(usage)));
@@ -605,8 +658,8 @@ function usageMetricDetails(usage) {
           ? [['导师推荐记录复核', usageComponentCost(usage, 'mentor_history_review')]] : []),
         ...(usage?.calls?.some(call => call.kind === 'context_brief')
           ? [['历史概括整理', usageComponentCost(usage, 'context_brief')]] : []),
-        ['联网等插件', pluginFee]],
-      note: [coverage, '模型与插件费用均已计入合计。按实际用量及适用刊例价预估，未扣免费额度、优惠或折扣，最终以方舟账单为准。',
+        ['联网等插件', pluginFee], ...videoBillingRows((usage?.calls || []).map(call => call.mediaBilling).filter(Boolean))],
+      note: [coverage, '人民币合计为方舟模型与插件费用预估。Pika 视频费用以美元单列，实付来自 Pika 任务回执。',
         snapshots.length ? '价格快照 ' + snapshots.join('、') + '。' : '', ...rates, ...priceNotes].filter(Boolean).join('\n') },
   ];
 }
@@ -757,8 +810,17 @@ function toolUsageSummary(calls) {
   const missing = values.length !== calls.length || values.some(usageUncertain);
   const costs = values.map(knownCost).filter(Number.isFinite);
   const amount = costs.reduce((total, value) => total + value, 0);
-  text.append(node('span', 'tool-usage-model', model), node('span', 'tool-usage-fee', pending ? '统计中' : missing ? amount > 0 ? '≥' + money(amount) : '待估' : money(amount)));
-  text.title = models.length ? models.join('\n') + '\n工具费用为预估，已计入下方会话合计。' : '本地工具不产生额外外部调用费；相关聊天模型用量计入下方会话统计。';
+  const videoBills = values.map(value => value.mediaBilling).filter(Boolean);
+  const allVideo = videoBills.length === values.length && videoBills.length > 0;
+  let fee = pending ? '统计中' : missing ? amount > 0 ? '≥' + money(amount) : '待估' : money(amount);
+  if (allVideo) {
+    const actual = videoBills.every(bill => Number.isSafeInteger(bill.actualMicroUsd));
+    fee = (actual ? '' : '预估 ') + usd(videoBills.reduce((sum, bill) =>
+      sum + (actual ? bill.actualMicroUsd : bill.estimatedMicroUsd), 0));
+  }
+  text.append(node('span', 'tool-usage-model', model), node('span', 'tool-usage-fee', fee));
+  text.title = allVideo ? 'Pika 费用按美元单列，以任务回执为准。'
+    : models.length ? models.join('\n') + '\n详见会话费用明细。' : '本地工具不产生额外外部调用费；相关聊天模型用量计入下方会话统计。';
   return text;
 }
 
@@ -770,13 +832,22 @@ function toolCallSection(calls, open = false) {
     header.append(node('code', 'tool-call-name', call.name || '工具'));
     const usage = call.usage;
     if (usage) {
-      const meta = node('span', 'tool-call-meta', briefModel(usage.model) + ' · ' + costLabel(usage));
-      meta.title = [usage.model || '本地执行，无额外外部调用费；聊天模型费用计入会话统计',
-        usage.basis, usage.asOf ? '价格快照 ' + usage.asOf : '', ...(usage.sources || [])].filter(Boolean).join('\n');
+      const bill = usage.mediaBilling;
+      const billed = bill && Number.isSafeInteger(bill.actualMicroUsd);
+      const fee = bill ? (billed ? '实付 ' + usd(bill.actualMicroUsd) : '预估 ' + usd(bill.estimatedMicroUsd)) : costLabel(usage);
+      const meta = node('span', 'tool-call-meta', briefModel(usage.model) + ' · ' + fee);
+      meta.title = bill ? [usage.model, '价格核对 ' + bill.checkedAt, bill.source].filter(Boolean).join('\n')
+        : [usage.model || '本地执行，无额外外部调用费；聊天模型费用计入会话统计',
+          usage.basis, usage.asOf ? '价格快照 ' + usage.asOf : '', ...(usage.sources || [])].filter(Boolean).join('\n');
       header.append(meta);
     } else header.append(node('span', 'tool-call-meta', '用量未记录'));
     item.append(header);
-    if (usage?.model) {
+    if (usage?.mediaBilling) {
+      const bill = usage.mediaBilling;
+      const label = `${bill.resolution} · ${bill.duration} 秒 · ${usd(bill.unitMicroUsd)}/秒`;
+      item.append(node('p', 'tool-call-breakdown', label +
+        (Number.isSafeInteger(bill.actualMicroUsd) ? ' · 估价 ' + usd(bill.estimatedMicroUsd) : ' · 未收到结算回执')));
+    } else if (usage?.model) {
       item.append(node('p', 'tool-call-model', usage.model));
       item.append(node('p', 'tool-call-breakdown', usage.pending ? '等待返回实际用量…'
         : `输入 ${tokenCount(usage.inputTokens)} · 输出 ${tokenCount(usage.outputTokens)} · 模型 ${money(usage.modelCostCny)} · 插件 ${money(usage.toolCostCny)}`));
@@ -790,6 +861,55 @@ function toolCallSection(calls, open = false) {
   const badge = toolUsageSummary(calls);
   if (badge) details.querySelector('summary').append(badge);
   return details;
+}
+
+function toolDecisionSection(decision, open = true) {
+  const percent = value => Number.isFinite(value)
+    ? value.toLocaleString('zh-CN', { style: 'percent', maximumFractionDigits: 1 }) : '—';
+  const content = [dataGrid([
+    ['对话上下文', Number.isInteger(decision.turns) ? `最近 ${decision.turns} 轮（含本轮）` : null],
+    ['模型', decision.resolvedModel || decision.model],
+    ['链路', decision.route === 'chengdu-singapore' ? '本机 → 成都 → 新加坡 → OpenRouter' : null],
+    ['耗时', Number.isFinite(decision.elapsedMs) ? `${decision.elapsedMs} ms` : null],
+    ['调用门槛', Number.isFinite(decision.threshold) ? `超过 ${percent(decision.threshold)}` : null],
+    [decision.mode === 'orchestrated' ? '选中的照片或视频' : '最高分工具', decision.selectedTool],
+    ['概率判断结果', ({ reply: '未选中工具', media: '先生成角色影像', standard: '普通工具',
+      orchestrated: '搜索优先，其他工具随后执行', fallback: '按普通聊天流程回复' })[decision.mode]],
+  ])];
+  let count;
+  if (decision.status === 'succeeded') {
+    const probabilities = Array.isArray(decision.probabilities) ? decision.probabilities : [];
+    count = probabilities.length;
+    content.push(dataGrid([
+      ['需要调用工具', percent(decision.anyToolProbability)],
+      ['无需调用工具', percent(1 - decision.anyToolProbability)],
+      ...probabilities.map(({ name, probability }) => [name, percent(probability)]),
+    ]));
+  } else if (decision.status === 'running') content.push(node('p', 'quiet', '正在判断是否需要工具…'));
+  else {
+    const reasons = { credential: '无法从 Service Clan 获取 Jev 连接', timeout: 'Jev 判断超时',
+      relay: '成都 → 新加坡隧道不可用，已跳过工具判断',
+      provider: 'OpenRouter 请求失败', response: 'Jev 未返回完整的工具概率' };
+    const reason = reasons[decision.reason] || '暂未取得工具判断结果';
+    content.push(node('p', 'quiet', decision.httpStatus ? `${reason}（HTTP ${decision.httpStatus}）` : reason));
+  }
+  const details = section('工具判断概率', content, open, count);
+  details.dataset.section = 'tool-decision';
+  return details;
+}
+
+function mediaGenerationPromptSection(prompt, open = true) {
+  const details = section('影像生成原始提示词', [node('p', 'inspector-label', prompt.tool), pretty(prompt.text)], open);
+  details.dataset.section = 'media-generation-prompt';
+  return details;
+}
+
+function renderLiveInspectorSection(name, render) {
+  const target = ui['context-content'];
+  const previous = target.querySelector(`[data-section="${name}"]`);
+  const next = render(previous?.open ?? true);
+  if (previous) previous.replaceWith(next);
+  else target.insertBefore(next, target.querySelector('[data-section="tool-calls"]'));
 }
 
 function renderLiveTools() {
@@ -867,28 +987,38 @@ function contextOverviewBody(overview) {
 
 function renderContext(context) {
   const target = ui['context-content'];
+  const previousDecision = target.querySelector('[data-section="tool-decision"]');
+  const previousMediaPrompt = target.querySelector('[data-section="media-generation-prompt"]');
+  const open = new Set([...target.querySelectorAll('details[open] > summary')].map(item => item.firstChild?.textContent));
+  const { definitions, byAgent } = state.availableTools ?? {};
+  const availableNames = byAgent?.[state.agentId];
+  const liveTools = Array.isArray(availableNames) ? availableNames.map(name => definitions[name]) : null;
+  const recordedTools = context?.tools ?? [];
+  const tools = liveTools ?? recordedTools;
+  const toolTitle = liveTools ? '可用工具' : '该轮可用工具';
+  const toolNames = tools.length ? node('div', 'context-meta') : node('p', 'quiet', '没有可用工具。');
+  for (const tool of tools) toolNames.append(node('span', 'context-chip', tool.function?.name || tool.name || String(tool)));
+  const toolsSection = section(toolTitle, [toolNames, ...(tools.length ? [pretty(tools)] : [])], open.has(toolTitle), tools.length);
   if (!context) {
-    target.replaceChildren(emptyPanel('还没有模型上下文', '发送第一条消息后，这里会显示本轮实际送给模型的内容。'));
+    target.replaceChildren(...(liveTools ? [toolsSection] : []), emptyPanel('还没有聊天详情'));
     return;
   }
-  const open = new Set([...target.querySelectorAll('details[open] > summary')].map(item => item.firstChild?.textContent));
-  const first = !target.querySelector('.inspector-section');
+  const first = ![...target.querySelectorAll('details > summary')].some(item => item.firstChild?.textContent === '本轮注入');
   const time = context.localTime;
-  const tools = context.tools || [];
   const memories = context.recentMemories || [];
   const events = Array.isArray(context.recentEvents) ? context.recentEvents : null;
   const history = context.history || [];
   const calls = context.toolCalls || [];
   const meta = node('div', 'context-meta');
-  meta.append(node('span', 'context-chip', context.model || state.model.name || '聊天模型'));
+  if (context.model && context.model !== state.model.name) meta.append(node('span', 'context-chip', context.model));
   if (context.preparedAt) meta.append(node('span', 'context-chip', dateTime(context.preparedAt)));
   if (Number.isFinite(context.firstDeltaMs)) meta.append(node('span', 'context-chip', `首字 ${context.firstDeltaMs} ms`));
   const summaryList = memories.length ? node('ul', 'context-memory-list') : null;
   for (const item of memories) summaryList.append(node('li', '', `${dateLabel(item.mentionedOn)} · ${item.summary}`));
   const eventList = events?.length ? node('ul', 'context-memory-list') : null;
   for (const item of events ?? []) eventList.append(node('li', '', `${dateTime(item.lastMentionedAt)} · ${item.summary}`));
-  const toolNames = tools.length ? node('div', 'context-meta') : node('p', 'quiet', '本轮没有开放工具。');
-  for (const tool of tools) toolNames.append(node('span', 'context-chip', tool.function?.name || tool.name || String(tool)));
+  const historicalTools = liveTools && JSON.stringify(liveTools) !== JSON.stringify(recordedTools)
+    ? [node('p', 'inspector-label', '该轮工具定义'), pretty(recordedTools)] : [];
   const sections = [meta,
     section('本轮注入', dataGrid([
       ['当地时间', typeof time === 'string' ? time : [time?.localDate, time?.localTime, time?.timezone].filter(Boolean).join(' ')],
@@ -902,9 +1032,11 @@ function renderContext(context) {
     section('记忆加载', node('p', 'quiet', '具体记忆由聊天 Agent 按话题搜索；实际读入内容见下方工具调用和原始模型输入。'), open.has('记忆加载')),
     section('固定提示词', pretty(context.system || ''), open.has('固定提示词')),
     section('会话消息', pretty(history), open.has('会话消息'), history.length),
-    section('可用工具', [toolNames, ...(tools.length ? [pretty(tools)] : [])], open.has('可用工具'), tools.length),
+    toolsSection,
+    ...(context.toolDecision ? [toolDecisionSection(context.toolDecision, previousDecision?.open ?? true)] : []),
+    ...(context.mediaGenerationPrompt ? [mediaGenerationPromptSection(context.mediaGenerationPrompt, previousMediaPrompt?.open ?? true)] : []),
     toolCallSection(calls, open.has('工具调用')),
-    section('原始模型输入', [...(context.recentConversationTurns ? [node('p', 'quiet', '近期对话摘录已计入本轮输入，审计记录保留注入轮数。')] : []), pretty(context.requestMessages || []), ...(context.modelRequests?.length ? [
+    section('原始模型输入', [...(context.recentConversationTurns ? [node('p', 'quiet', '近期对话摘录已计入本轮输入，审计记录保留注入轮数。')] : []), pretty(context.requestMessages || []), ...historicalTools, ...(context.modelRequests?.length ? [
       node('p', 'inspector-label', '模型请求统计'), pretty(context.modelRequests),
     ] : [])], open.has('原始模型输入')),
   ];
@@ -1457,9 +1589,10 @@ async function requestReply() {
   state.sending = true;
   cancelSessionStatus();
   state.liveToolCalls = [];
+  for (const detail of ui['context-content'].querySelectorAll('[data-section="tool-decision"], [data-section="media-generation-prompt"]')) detail.remove();
   renderLiveTools();
   show('app-error', '');
-  put('chat-status', `${agent()?.name || 'Agent'}正在回复…`);
+  put('chat-status', '');
   updateControls();
   const input = ui['chat-input'];
   const reply = chatMessage('assistant');
@@ -1508,6 +1641,12 @@ async function requestReply() {
       if (event.sessionId) id = event.sessionId;
       if (event.type === 'start') began = true;
       if (event.type === 'usage' && (!event.sessionId || event.sessionId === id)) renderUsage(event.usage);
+      if (event.type === 'tool_decision' && event.decision) {
+        renderLiveInspectorSection('tool-decision', open => toolDecisionSection(event.decision, open));
+      }
+      if (event.type === 'media_generation_prompt' && event.prompt) {
+        renderLiveInspectorSection('media-generation-prompt', open => mediaGenerationPromptSection(event.prompt, open));
+      }
       if (event.type === 'tool_usage' && (!event.sessionId || event.sessionId === id)) {
         recordLiveTool(event.call);
         if (event.usage) renderUsage(event.usage);
@@ -1520,9 +1659,22 @@ async function requestReply() {
         presentation = presentation.then(() => appendReplyPart(reply.stack, event.text, () => !streamEnded))
           .catch(error => { presentationError ??= error; });
       }
-      if (event.type === 'tool_status') {
-        if (event.status === 'running') put('chat-status', event.label || `${agent()?.name || 'Agent'}正在处理…`);
-        else if (event.status === 'complete') put('chat-status', `${agent()?.name || 'Agent'}正在回复…`);
+      if (event.type === 'tool_status' && event.label &&
+          (event.showInChat === true || (event.status === 'running' && event.mediaKind))) {
+        presentation = presentation.then(() => {
+          if (streamEnded) return;
+          removeTyping(reply.stack);
+          appendTyping(reply.stack, event.label);
+          scrollLatest();
+        }).catch(error => { presentationError ??= error; });
+      }
+      if (event.type === 'character_media') {
+        presentation = presentation.then(() => {
+          const follow = ui.messages.scrollHeight - ui.messages.scrollTop - ui.messages.clientHeight < 150;
+          removeTyping(reply.stack);
+          appendCharacterMedia(reply.stack, event.attachment);
+          if (follow) scrollLatest(true);
+        }).catch(error => { presentationError ??= error; });
       }
       if (event.type === 'done') { done = true; streamEnded = true; }
       if (event.type === 'error') throw new Error(event.message || '本轮回复失败');
@@ -1643,12 +1795,54 @@ function installListeners() {
       queueMessage();
     }
   });
-  for (const [button, panel] of [['context-toggle', 'context-panel'], ['memory-toggle', 'memory-panel']]) {
-    ui[button]?.addEventListener('click', () => {
-      ui[panel]?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-      ui[panel]?.focus({ preventScroll: true });
+  const inspectors = ['context', 'memory'];
+  const wideWorkspace = matchMedia('(min-width: 1100px)');
+  let openInspector;
+  const setInspector = (next, moveFocus = true) => {
+    const previous = openInspector;
+    const developer = workspaceMode === 'developer';
+    const docked = developer && wideWorkspace.matches;
+    openInspector = developer && !docked ? next : undefined;
+    for (const name of inspectors) {
+      const visible = docked || name === openInspector;
+      ui[`${name}-panel`].hidden = !visible;
+      ui[`${name}-toggle`].setAttribute('aria-expanded', String(visible));
+    }
+    const footer = ui['session-usage']?._usageFooter;
+    if (ui['context-panel'].hidden && footer) {
+      footer.pinned = null;
+      hideUsageTooltip(footer);
+    }
+    if (!moveFocus) return;
+    if (openInspector) el(`${openInspector}-close`).focus({ preventScroll: true });
+    else if (previous) ui[`${previous}-toggle`].focus({ preventScroll: true });
+  };
+  for (const name of inspectors) {
+    ui[`${name}-toggle`].addEventListener('click', () => setInspector(openInspector === name ? undefined : name));
+    el(`${name}-close`).addEventListener('click', () => setInspector());
+  }
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && openInspector && !document.querySelector('dialog[open]')) setInspector();
+  });
+  wideWorkspace.addEventListener('change', () => setInspector(undefined, false));
+
+  const modeButtons = { demo: el('mode-demo'), developer: el('mode-developer') };
+  const setMode = mode => {
+    workspaceMode = mode;
+    document.body.dataset.workspaceMode = mode;
+    for (const [name, button] of Object.entries(modeButtons)) button.setAttribute('aria-pressed', String(name === mode));
+    setInspector(undefined, false);
+  };
+  for (const [mode, button] of Object.entries(modeButtons)) {
+    button.addEventListener('click', () => {
+      setMode(mode);
+      try { localStorage.setItem(workspaceModeKey, mode); } catch { /* The current view still works without storage. */ }
     });
   }
+  let savedMode;
+  try { savedMode = localStorage.getItem(workspaceModeKey); } catch { /* Use the default view. */ }
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+  setMode(Object.hasOwn(modeButtons, savedMode) ? savedMode : local ? 'developer' : 'demo');
 }
 
 async function loadState(data, { preferDefaultAgent = false } = {}) {
@@ -1658,6 +1852,7 @@ async function loadState(data, { preferDefaultAgent = false } = {}) {
   state.agents = data.agents || [];
   state.children = data.children || [];
   state.model = data.model || {};
+  state.availableTools = data.availableTools ?? null;
   const defaultAgentId = state.agents.find(item => item.id === 'shen-zhiheng')?.id ||
     state.agents.find(item => item.id === 'lin-xiaoman')?.id ||
     [...defaultAgentIds].find(id => state.agents.some(item => item.id === id)) || state.agents[0]?.id || '';
@@ -1716,8 +1911,10 @@ async function applyAgentChange(savedAgent, { created }) {
   if (local) await refreshCatalogPermissions();
   const data = local ? await workspaceClient.api('/api/state', undefined, 'GET', { force: true }) : await api('/api/state');
   if (!data.agents?.some(item => item.id === savedAgent.id)) throw new Error('新角色尚未载入，请重试。');
+  const toolsChanged = JSON.stringify(state.availableTools ?? null) !== JSON.stringify(data.availableTools ?? null);
   state.agents = data.agents;
   state.model = data.model || {};
+  state.availableTools = data.availableTools ?? null;
   syncAgentGalleryRoute.refresh();
   if (created) {
     state.agentId = savedAgent.id;
@@ -1725,12 +1922,13 @@ async function applyAgentChange(savedAgent, { created }) {
   } else {
     // Editing keeps the selected user, session, conversation and memory view.
     renderSelectors();
+    if (toolsChanged) renderContext(state.conversation?.context ?? null);
     saveSelection();
   }
 }
 
 const agentEditor = installAgentEditor({
-  canOpen: () => !state.busy && !state.sending && !state.editorSaving && !state.pendingMessages.length,
+  canOpen: () => workspaceMode === 'developer' && !state.busy && !state.sending && !state.editorSaving && !state.pendingMessages.length,
   onSaved: applyAgentChange,
   onBusyChanged: value => { state.editorSaving = value; updateControls(); },
   readAgent: readEditableAgent,
@@ -1742,7 +1940,7 @@ const agentEditor = installAgentEditor({
 
 let agentDeleteTarget = null;
 function openAgentDeletion(id) {
-  if (state.busy || state.sending || state.editorSaving || state.pendingMessages.length) return;
+  if (workspaceMode !== 'developer' || state.busy || state.sending || state.editorSaving || state.pendingMessages.length) return;
   const selected = state.agents.find(item => item.id === id);
   if (!selected || !agentPermissions(selected).canDelete) return;
   agentDeleteTarget = { ...selected };
@@ -1791,6 +1989,7 @@ const syncAgentGalleryRoute = installAgentGallery({
     (agentDisplayOrder.get(a.id) ?? 2) - (agentDisplayOrder.get(b.id) ?? 2)),
   getSelectedId: () => state.agentId,
   getDataVersion: () => state.dataVersion,
+  isDeveloperMode: () => workspaceMode === 'developer',
   requestJSON: path => api(path),
   avatarFor: selected => selected.avatar || avatars.get(selected.id) || defaultPortraits.get(selected.id) || fallbackAvatar,
   onCreate: () => agentEditor.open(),
@@ -1835,6 +2034,8 @@ setInterval(async () => {
     if (state.busy || state.editorSaving || state.sending || state.pendingMessages.length) return;
     if (state.dataVersion !== (data.dataVersion || '')) await runAction(() => loadState(data));
     else {
+      const toolsChanged = JSON.stringify(state.availableTools ?? null) !== JSON.stringify(data.availableTools ?? null);
+      state.availableTools = data.availableTools ?? null;
       if (JSON.stringify(state.agents) !== JSON.stringify(data.agents || [])) {
         state.agents = data.agents || [];
         syncAgentGalleryRoute.refresh();
@@ -1843,6 +2044,7 @@ setInterval(async () => {
           await changeScope();
         } else renderSelectors();
       }
+      if (toolsChanged) renderContext(state.conversation?.context ?? null);
       await Promise.all([refreshMemory(), refreshUsage()]);
     }
   } catch { /* An active action shows its own network errors. */ }
@@ -1924,8 +2126,7 @@ async function completeWorkspaceEntry(serial) {
     el('workspace').hidden = false;
     document.body.classList.remove('entrance-active');
     await workspaceClient?.resumeDeadlines();
-    const recovered = await offerRecovery();
-    if (!recovered && workspaceClient && !(await workspaceClient.metadata()).guideSeen) openGuide();
+    await offerRecovery();
   } catch (error) {
     if (error.needsRecovery && workspaceClient) {
       await showEntryRecovery(serial, await workspaceClient.entryState());
@@ -2018,7 +2219,9 @@ async function refreshLocalView() {
     }
     const agentsChanged = JSON.stringify(state.agents) !== JSON.stringify(data.agents);
     const childrenChanged = JSON.stringify(state.children) !== JSON.stringify(data.children);
+    const toolsChanged = JSON.stringify(state.availableTools ?? null) !== JSON.stringify(data.availableTools ?? null);
     state.agents = data.agents; state.children = data.children; state.model = data.model || {};
+    state.availableTools = data.availableTools ?? null;
     if (agentsChanged) syncAgentGalleryRoute.refresh();
 
     const sessions = (await api(scoped('/api/sessions'))).sessions || [];
@@ -2038,7 +2241,7 @@ async function refreshLocalView() {
     if (agentsChanged || childrenChanged || sessionsChanged || selectionChanged) renderSelectors();
     if (selectionChanged) { clearMentorArrival(); saveSelection(); }
     if (messagesChanged || cardsChanged) renderChat(conversation?.messages || [], false, { preserveScroll: !selectionChanged });
-    if (contextChanged) renderContext(conversation?.context ?? null);
+    if (contextChanged || toolsChanged) renderContext(conversation?.context ?? null);
     if (usageChanged) renderUsage(conversation?.usage ?? null);
     if ((selectionChanged || cardsChanged) && conversation?.mentorCards?.some(card => card.state === 'available')) {
       void refreshSessionStatus();
@@ -2055,10 +2258,10 @@ async function refreshLocalView() {
 }
 
 const guideSteps = [
-  { title: '先选一个想聊的角色', target: 'agent-select', copy: '点左上角的 Agent 打开角色图鉴。八位角色都能选择；在「角色概览」了解设定，在「提示词原文」查看实际使用的提示词。', note: '可以随时换角色，每位角色分别保存与你的记忆。' },
-  { title: '也可以创造自己的角色', target: 'new-agent', copy: '点击「创建角色」，只需填写名称和角色设定。创建后会直接公开，大家都能在角色图鉴里选择并聊天。', note: '自己创建的公共角色可以编辑、删除。管理凭证保存在创建时的浏览器，保留网站数据才能继续管理；旧的本机角色不会自动公开。' },
-  { title: '让角色认识你', target: 'new-child', copy: '右上角可以创建用户资料，填写名字、年龄与兴趣。接着就能聊天；点「新会话」开启下一段，旧会话记录仍可查看。', note: '默认提供22岁的访客测试资料。停聊约15分钟后，会在下次打开或页面仍开着时整理记忆。每个人的对话与记忆各自保存在浏览器里。' },
-  { title: '记忆留在你的浏览器', target: 'memory-panel', copy: '右侧可以查看记忆和用户概括。「清空记忆」只清理当前用户与角色的记忆，聊天记录会保留。左侧显示每轮实际送给模型的内容。', note: '共享口令不是账户。换设备、换浏览器不会同步；清理网站数据会丢失记录。请求处理时会临时发送工作区资料给服务端，不写入服务器用户数据库。请自行保留重要信息。' },
+  { title: '选择角色', target: 'agent-select', copy: '点角色头像，可以换一个人聊。每个角色的聊天和记忆分别保存。' },
+  { title: '创建角色', target: 'mode-developer', copy: '在 Developer 模式填写名称和设定即可创建角色。新角色会出现在大家的角色图鉴里。', note: '只有创建时使用的浏览器能编辑或删除该角色。' },
+  { title: '找回聊天', target: 'session-select', copy: '用「会话」找回之前的聊天，或点「新会话」重新开始。' },
+  { title: '聊天记录与记忆', target: 'mode-developer', copy: '在 Developer 模式可以查看聊天详情和记忆。聊天和记忆保存在当前浏览器。', note: '换设备或浏览器不会同步，清理网站数据会丢失记录。回复时，服务端会临时处理这次聊天需要的内容。' },
 ];
 let guideIndex = 0;
 function renderGuide() {
@@ -2066,7 +2269,8 @@ function renderGuide() {
   const step = guideSteps[guideIndex];
   el('guide-title').textContent = step.title;
   el('guide-copy').textContent = step.copy;
-  el('guide-note').textContent = step.note;
+  el('guide-note').textContent = step.note || '';
+  el('guide-note').hidden = !step.note;
   el('guide-progress').textContent = `${guideIndex + 1} / ${guideSteps.length}`;
   el('guide-back').disabled = guideIndex === 0;
   el('guide-next').textContent = guideIndex === guideSteps.length - 1 ? '开始聊天' : '下一步';

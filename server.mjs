@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { readFileSync } from 'node:fs';
+import { createReadStream, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -12,6 +12,9 @@ import { createAccessGate } from './lib/access-gate.mjs';
 import { createBrowserWorkspace, BROWSER_WORKSPACE_MAX_BYTES } from './lib/browser-workspace.mjs';
 import { PublicCatalog } from './lib/public-catalog.mjs';
 import { loadSharedPrompts } from './lib/shared-prompts.mjs';
+import { createCharacterMedia } from './lib/character-media.mjs';
+import { createToolDecision } from './lib/tool-decision.mjs';
+import { createJevRelay } from './lib/jev-relay.mjs';
 
 const PUBLIC = fileURLToPath(new URL('./public/', import.meta.url));
 const APP_VERSION = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
@@ -32,6 +35,33 @@ const SECURITY_HEADERS = {
 function sendJson(response, status, value, headers = {}) {
   response.writeHead(status, { ...SECURITY_HEADERS, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
   response.end(JSON.stringify(value));
+}
+
+function serveCharacterMedia(request, response, asset) {
+  const headers = { ...SECURITY_HEADERS, 'Content-Type': asset.type, 'Cache-Control': 'private, no-store',
+    'Accept-Ranges': 'bytes', 'Cross-Origin-Resource-Policy': 'same-origin' };
+  const range = request.headers.range;
+  let start = 0;
+  let end = asset.size - 1;
+  if (range) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+    if (match?.[1]) {
+      start = Number(match[1]);
+      if (match[2]) end = Math.min(end, Number(match[2]));
+    } else if (match?.[2]) start = Math.max(0, asset.size - Number(match[2]));
+    else start = asset.size;
+    if (start > end) {
+      response.writeHead(416, { ...headers, 'Content-Range': `bytes */${asset.size}` });
+      return response.end();
+    }
+    headers['Content-Range'] = `bytes ${start}-${end}/${asset.size}`;
+  }
+  response.writeHead(range ? 206 : 200, { ...headers, 'Content-Length': end - start + 1 });
+  if (request.method === 'HEAD') return response.end();
+  const stream = createReadStream(asset.file, { start, end });
+  response.once('close', () => stream.destroy());
+  stream.once('error', () => response.destroy());
+  stream.pipe(response);
 }
 
 async function jsonBody(request, maxBytes = 64_000) {
@@ -166,7 +196,19 @@ export function createLabServer(options = {}) {
   const demoArchitecture = config.describeArchitecture?.({
     model: config.model.name, agents: defaultAgents, children: config.defaultChildren, sharedPrompts, search: config.search,
   });
-  const browserWorkspace = browserMode ? createBrowserWorkspace({ ...config, appVersion: APP_VERSION,
+  const localBrowserMode = browserMode && config.localNoAuth && config.host === '127.0.0.1';
+  const localMedia = localBrowserMode && !config.characterMedia && config.serviceClanTokenFile && config.characterMediaDirectory;
+  const relay = localMedia || (localBrowserMode && config.jevRelay && config.serviceClanTokenFile && !config.toolDecision)
+    ? createJevRelay({ tokenFile: config.serviceClanTokenFile }) : null;
+  const characterMedia = localBrowserMode
+    ? config.characterMedia ?? (localMedia ? createCharacterMedia({ tokenFile: config.serviceClanTokenFile,
+      directory: config.characterMediaDirectory, pikaRelay: relay }) : null)
+    : null;
+  const toolDecision = localBrowserMode
+    ? config.toolDecision ?? (config.serviceClanTokenFile
+      ? createToolDecision({ tokenFile: config.serviceClanTokenFile, relay: config.jevRelay ? relay : null }) : null)
+    : null;
+  const browserWorkspace = browserMode ? createBrowserWorkspace({ ...config, characterMedia, toolDecision, appVersion: APP_VERSION,
     catalog, defaultAgents, retiredAgentIds: [...retiredAgentIds], sharedPrompts,
     defaultChildren: config.defaultChildren ?? [{ name: '访客', age: 22, interests: [] }],
   }) : null;
@@ -195,6 +237,12 @@ export function createLabServer(options = {}) {
       if (!accepting) throw problem('服务正在重启，请稍后再试', 503);
       if (demoArchitecture && pathname === '/api/demo/architecture' && method === 'GET') {
         return sendJson(response, 200, demoArchitecture);
+      }
+      const mediaPath = /^\/api\/character-media\/(photo|video)\/([a-f0-9]{48})$/.exec(pathname);
+      if (mediaPath && ['GET', 'HEAD'].includes(method)) {
+        const asset = await characterMedia?.asset(mediaPath[2], mediaPath[1]);
+        if (!asset) throw problem('角色影像不存在', 404);
+        return serveCharacterMedia(request, response, asset);
       }
       const ownerKey = request.headers['x-chat-lab-owner'];
       if (pathname === '/api/catalog' && method === 'GET') {
@@ -418,6 +466,7 @@ export function createLabServer(options = {}) {
   return {
     server, runtime, store, catalog, storageMode: config.storageMode, model: config.model,
     async listen(port = config.port) {
+      await characterMedia?.refresh?.();
       await new Promise((resolveListen, reject) => {
         server.once('error', reject);
         server.listen(port, config.host, () => {
@@ -430,6 +479,7 @@ export function createLabServer(options = {}) {
           }
         });
       });
+      relay?.start();
       runtime?.tick();
       return server.address();
     },
@@ -439,6 +489,7 @@ export function createLabServer(options = {}) {
       if (!drain) for (const controller of workspaceControllers) controller.abort();
       await Promise.allSettled([...activeWorkspaces]);
       await runtime?.stop({ drain });
+      await relay?.close();
       await closed;
       store?.close();
       gate?.close();
