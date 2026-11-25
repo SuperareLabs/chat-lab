@@ -41,6 +41,9 @@ test('media failure wording is removed without replacing the search, mentor or o
     { photo: 'failed', video: 'not_selected' }), [search, mentor]);
   assert.deepEqual(alignMediaReply(['按你说的，花坛黄花照片这轮没成，所以没图给你，先从花瓣的形状看起吧。'],
     { photo: 'failed', video: 'not_selected' }), ['按你说的，先从花瓣的形状看起吧。']);
+  assert.deepEqual(alignMediaReply([search,
+    '花坛的照片这轮没出来，我不能给你看没拍到的图。你可以先说说黄花瓣啥形状，我陪你把它记清楚。'],
+  { photo: 'failed', video: 'not_selected' }), [search, '你可以先说说黄花瓣啥形状，我陪你把它记清楚。']);
 
   const unavailableSearch = '开馆时间我不敢乱报，你去官网再核对一下。';
   const advisor = '小林找到了，蚂蚁路线和搬了什么，他陪你记。';

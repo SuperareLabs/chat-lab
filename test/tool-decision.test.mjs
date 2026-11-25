@@ -248,6 +248,8 @@ test('a scripted flower photo can repair its plan once before submitting it for 
     { name: 'an explicit optional POV limb resolves to the current character', plans: [{ ...good,
       secondary_subject: { asset_id: null, framing_mode: 'partial_limb_only', action_or_state: 'one hand holding a magnifying glass' } }],
     submissions: 1 },
+    { name: 'the POV template supplies an omitted optional limb framing', plans: [{ ...good,
+      secondary_subject: { asset_id: null, action_or_state: 'a green-sleeved arm reaching into frame' } }], submissions: 1 },
     { name: 'matched action payload is recovered without exposing its chat text', plans: [{ response: {
       message: '照片马上发。', action: { name: 'share_photo', payload: good, confidence: 0.9 } }, videoNote: '视频下次再说' }], submissions: 1 },
     { name: 'invalid POV subject and environment repaired', plans: [badSubject, good], submissions: 1 },
