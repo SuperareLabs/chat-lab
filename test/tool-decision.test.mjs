@@ -242,12 +242,17 @@ test('a scripted flower photo can repair its plan once before submitting it for 
   const attachment = { kind: 'photo', id: 'd'.repeat(48) };
   const cases = [
     { name: 'empty plan repaired', plans: [{}, good], submissions: 1 },
+    { name: 'structured English photo setting is normalized without another model call',
+      plans: [{ ...good, environment_context: { setting: 'a sunlit courtyard', timezone: 'Asia/Shanghai', weather: 'soft daylight' } }],
+      submissions: 1, expectedEnvironment: 'a sunlit courtyard, soft daylight' },
+    { name: 'matched action payload is recovered without exposing its chat text', plans: [{ response: {
+      message: '照片马上发。', action: { name: 'share_photo', payload: good, confidence: 0.9 } }, videoNote: '视频下次再说' }], submissions: 1 },
     { name: 'invalid POV subject and environment repaired', plans: [badSubject, good], submissions: 1 },
     { name: 'second invalid plan stays undelivered', plans: [{}, badSubject], submissions: 0 },
     { name: 'explicitly declining the photo needs no repair', plans: [{ should_send_image: false }], submissions: 0 },
     { name: 'provider failure after a repair never resubmits the generation', plans: [{}, good], submissions: 1, providerFails: true },
   ];
-  for (const { name, plans, submissions, providerFails } of cases) await t.test(name, async () => {
+  for (const { name, plans, submissions, providerFails, expectedEnvironment = good.environment_context } of cases) await t.test(name, async () => {
     const requests = [];
     const generations = [];
     const events = [];
@@ -283,6 +288,7 @@ test('a scripted flower photo can repair its plan once before submitting it for 
     for (const input of requests) assert.ok(input.some(message => message.content.includes(text)), 'keep the original flower request');
     const purposes = ['character-media-plan', 'character-media-plan-repair'].slice(0, plans.length);
     const context = JSON.parse(turn.snapshot.tables.sessions[0].context);
+    assert.ok(!JSON.stringify(context.toolCalls).includes('照片马上发'));
     assert.deepEqual(context.modelRequests.map(request => request.purpose).filter(Boolean), purposes);
     const planCharges = turn.snapshot.tables.usage_records.filter(row => row.kind === 'chat' && row.record_key.includes(':character-media-plan'));
     assert.deepEqual(planCharges.map(row => row.record_key.split(':').at(-1)).sort(), purposes);
@@ -295,7 +301,52 @@ test('a scripted flower photo can repair its plan once before submitting it for 
       assert.equal(generations[0].template, good.template_id);
       assert.equal(generations[0].subject.id, null);
       assert.equal(generations[0].subject.text, good.primary_subject.action_or_state);
-      assert.equal(generations[0].environment, good.environment_context);
+      assert.equal(generations[0].environment, expectedEnvironment);
     }
   });
+});
+
+test('a failed video environment is rewritten on its own and keeps the requested clip length', async () => {
+  const text = '拍一段三秒短视频，玻璃碗里木勺慢慢搅拌奶冻，不要对白。';
+  const primary = { asset_id: null, action_or_state: 'creamy pudding slowly swirling in a glass bowl' };
+  const badPlan = { should_send_video: true, template_id: 'VID_AMBIENT_LOOP', primary_subject: primary,
+    environment_and_sound: { type: 'string', description: '木勺搅动时发出轻柔的声音。' }, duration_seconds: 3 };
+  const environment = 'soft spoon clinks against glass in a quiet room';
+  const attachment = { kind: 'video', id: 'b'.repeat(48) };
+  const requests = [], generations = [], events = [];
+  const agentId = 'video-environment-test';
+  const workspace = createBrowserWorkspace({
+    defaultAgents: [{ id: agentId, name: '测试角色', definition: '喜欢做饭。', metadata: {} }],
+    defaultChildren: [{ name: '测试访客', age: 22, interests: [] }],
+    model: { name: 'video-test', configured: true }, memoryModel: { configured: false },
+    toolDecision: {}, mentorTrigger: { model: 'test-trigger', async decide() {
+      return { decisions: { character_media: { choice: 'call' } }, toolDecision: { status: 'succeeded',
+        anyToolProbability: 0.98, probabilities: [{ name: 'share_video', probability: 0.97 }] } };
+    } },
+    provider: { async chat({ messages }) {
+      const instructions = messages[0].content;
+      if (!instructions.includes('【Share Video】')) return { content: '{"messages":["木勺轻轻碰了下玻璃碗。"]}' };
+      requests.push(messages);
+      return { content: JSON.stringify(instructions.includes('【影像规划修正】')
+        ? { environment_and_sound: environment } : badPlan) };
+    } },
+    characterMedia: { available: kind => kind === 'video', async generate(kind, { videoPlan }) {
+      generations.push(videoPlan);
+      assert.equal(kind, 'video');
+      return { ok: true, attachment };
+    } },
+  });
+  const boot = await workspace.execute({ method: 'GET', path: '/api/state' });
+  const scope = { childId: boot.value.children[0].id, agentId };
+  const turn = await workspace.execute({ method: 'POST', path: '/api/chat', scope, snapshot: boot.snapshot,
+    body: { ...scope, text, requestId: crypto.randomUUID() } }, { emit: event => events.push(event) });
+  assert.equal(turn.status, 200);
+  assert.equal(requests.length, 2);
+  assert.ok(requests[1][1].content.includes(text));
+  assert.match(requests[1][0].content, /只返回 \{"environment_and_sound":/u);
+  assert.equal(generations.length, 1);
+  assert.equal(generations[0].primary.text, primary.action_or_state);
+  assert.equal(generations[0].environment, environment);
+  assert.equal(generations[0].duration, 3);
+  assert.deepEqual(events.filter(event => event.type === 'character_media').map(event => event.attachment), [attachment]);
 });

@@ -77,6 +77,33 @@ test('malformed media fit cannot invalidate the total score or erase a search ve
   assert.deepEqual(result.decisions.search_web, { choice: 'skip', reason: 'explicit_no_search' });
 });
 
+test('one malformed choice in a unified turn preserves the total, valid routes and explicit search veto', async () => {
+  const answers = { ...categoryAnswers, any_tool: { type: 'noul', noul: 0.91 },
+    calculate: { type: 'choice', choice: 'call' }, recall_memory: { type: 'choice', choice: 'unknown' },
+    share_photo: { type: 'noul', noul: 1 }, share_video: { type: 'noul', noul: 0 } };
+  const client = createToolDecisionClient({ model: 'jev-test', url: 'https://example.test/decisions' }, 'test', {
+    fetchImpl: async () => Response.json({ answers, usage: { input_tokens: 13 } }),
+  });
+  const request = buildToolTriggerRequest({ ...input, includeToolDecision: true });
+  const result = await client.decide(request);
+  assert.deepEqual(result.decisions, { find_mentor: { choice: 'call', reason: 'outside_specialty_research' },
+    search_web: { choice: 'skip', reason: 'explicit_no_search' }, calculate: { choice: 'call' } });
+  assert.equal(result.toolDecision.anyToolProbability, 0.91);
+  assert.equal(result.receipt.usage.input_tokens, 13);
+
+  // Without a reliable search choice, a mentor's request for research cannot clear a possible veto.
+  answers.search_web = { type: 'choice', choice: ['call'] };
+  const damagedSearch = await client.decide(request);
+  assert.equal(damagedSearch.decisions.search_web, undefined);
+  assert.equal(damagedSearch.decisions.calculate.choice, 'call');
+  assert.equal(damagedSearch.toolDecision.status, 'succeeded');
+  delete answers.any_tool;
+  const noTotal = await client.decide(request);
+  assert.deepEqual(noTotal.toolDecision, { status: 'unavailable', reason: 'response' });
+  assert.equal(noTotal.decisions.calculate.choice, 'call');
+  await assert.rejects(client.decide(buildToolTriggerRequest(input)), /缺少有效的工具选择/);
+});
+
 test('a missing or invalid total cannot be supplied by a high format score', async () => {
   for (const score of [undefined, 1.3]) {
     const client = createToolDecisionClient({ model: 'jev-test', url: 'https://example.test/decisions' }, 'test', {

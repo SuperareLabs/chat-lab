@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 import { demoAgents, demoChildren } from '../config/mentor-demo.mjs';
 import { createBrowserWorkspace } from '../lib/browser-workspace.mjs';
 import { MENTOR_DECISION_PROMPT } from '../lib/mentor-recommendation.mjs';
@@ -52,14 +53,14 @@ const triggerUsageFor = turn => turn.snapshot.tables.usage_records
   .filter(row => row.run_id === turn.run.id && row.kind === 'mentor_trigger')
   .map(row => JSON.parse(row.entry));
 
-async function demo({ agents = demoAgents, search, clock, failWelcome = false, characterMedia, toolDecision, mediaPlan, memoryProvider } = {}) {
+async function demo({ agents = demoAgents, search, searchPlanningTimeoutMs, clock, failWelcome = false, characterMedia, toolDecision, mediaPlan, memoryProvider } = {}) {
   let turn;
   const welcomeRequests = [];
   const briefRequests = [];
   const workspace = createBrowserWorkspace({
     defaultAgents: agents, defaultChildren: demoChildren, sharedPrompts: loadSharedPrompts(),
     model: { name: 'test', configured: true }, memoryModel: { name: 'test', configured: Boolean(memoryProvider) },
-    memoryProvider, search, clock, characterMedia, toolDecision,
+    memoryProvider, search, searchPlanningTimeoutMs, clock, characterMedia, toolDecision,
     mentorTrigger: { model: 'test-trigger', async decide(input, { signal }) {
       assert.equal(signal.aborted, false);
       turn.triggerRequests.push(input);
@@ -73,7 +74,7 @@ async function demo({ agents = demoAgents, search, clock, failWelcome = false, c
       return { decisions, ...(turn.toolDecision ? { toolDecision: turn.toolDecision } : {}),
         receipt: { model: 'test-trigger', usage: { input_tokens: 100, output_tokens: 0 } } };
     } },
-    provider: { async chat({ messages, tools, toolChoice }) {
+    provider: { async chat({ messages, tools, toolChoice, signal }) {
       if (mediaPlan && /【Share (?:Photo|Video)】/u.test(messages[0].content)) return response(JSON.stringify(await mediaPlan(messages)));
       if (messages[0].content.includes('【主动欢迎】')) {
         welcomeRequests.push({ messages, tools });
@@ -105,7 +106,7 @@ async function demo({ agents = demoAgents, search, clock, failWelcome = false, c
         turn.receipts = messages.filter(message => message.role === 'tool').map(message => JSON.parse(message.content));
         turn.offersBeforeContinuation ??= offers(turn).length;
       }
-      const nativeTool = typeof turn.nativeTool === 'function' ? await turn.nativeTool(toolChoice, messages, tools) : turn.nativeTool;
+      const nativeTool = typeof turn.nativeTool === 'function' ? await turn.nativeTool(toolChoice, messages, tools, signal) : turn.nativeTool;
       if (nativeTool && !messages.some(message => message.role === 'tool' && message.tool_call_id === nativeTool.id)) {
         return response('', [nativeTool], 'tool_calls');
       }
@@ -380,6 +381,11 @@ test('after search, mentor, media, calculation and memory can all enter before a
     assert.equal(audit[0], 'search_web');
     assert.deepEqual([...audit].sort(), ['calculate', 'find_mentor', 'get_memory_detail', 'recall_memory', 'search_web', 'share_photo']);
     assert.ok(audit.indexOf('recall_memory') < audit.indexOf('get_memory_detail'));
+    for (const [name, expectedStatus] of [['recall_memory', 'matched'], ['get_memory_detail', 'found']]) {
+      const call = turn.context.toolCalls.find(tool => tool.name === name);
+      assert.equal(call.result.status, expectedStatus);
+      assert.equal(call.usage.status, 'succeeded');
+    }
     const billed = turn.snapshot.tables.usage_records.filter(row => row.run_id === turn.run.id && row.tool_name && row.kind !== 'mentor_history_review');
     assert.deepEqual(billed.map(row => row.tool_name).sort(), [...audit].sort(), 'concurrent calls must retain separate usage records');
     assert.equal(finalReplies, 1);
@@ -388,6 +394,40 @@ test('after search, mentor, media, calculation and memory can all enter before a
     assert.deepEqual(offers(turn).map(event => event.mentor.id), [duoluo.id]);
     assert.deepEqual(turn.events.filter(event => event.type === 'character_media').map(event => event.attachment), mediaFails ? [] : [attachment]);
   });
+});
+
+test('a completed attachment survives final-model failure, history reload and same-request replay', async () => {
+  const attachment = { kind: 'photo', id: 'c'.repeat(48) };
+  let generations = 0;
+  const app = await demo({ toolDecision: {},
+    characterMedia: { available: kind => kind === 'photo', async generate() { generations++; return { ok: true, attachment }; } },
+    mediaPlan: () => ({ should_send_image: true, template_id: 'SHOT_POV_SUBJECT', environment_context: 'a green courtyard',
+      primary_subject: { asset_id: null, action_or_state: 'a blooming rose' } }),
+  });
+  const text = '帮我找多罗练口语，再拍一张蔷薇花。';
+  const options = { requestId: crypto.randomUUID(), trigger: 'call', mediaChoice: 'call', failContinuation: true,
+    decision: decision('offer', { mentorIds: [duoluo.id], basis: 'explicit_request', evidence: '帮我找多罗练口语' }),
+    toolDecision: { status: 'succeeded', anyToolProbability: 0.97, probabilities: [{ name: 'share_photo', probability: 0.9 }] },
+    reply() { throw new Error('synthetic final model failure'); } };
+  const failed = await app.send(text, options);
+  assert.equal(failed.run.status, 'failed');
+  assert.deepEqual(failed.events.filter(event => ['character_media','error','done'].includes(event.type)).map(event => event.type),
+    ['character_media','error']);
+  assert.deepEqual(parts(failed), []);
+  assert.deepEqual(offers(failed), []);
+  const history = await app.request('GET', '/api/sessions/' + failed.sessionId, currentMentor.id);
+  const replies = history.value.messages.filter(message => message.role === 'assistant');
+  assert.equal(replies.length, 1);
+  assert.equal(replies[0].text, '');
+  assert.deepEqual(replies[0].attachment, attachment);
+  const replay = await app.send(text, options);
+  assert.equal(replay.run.id, failed.run.id);
+  assert.equal(replay.run.status, 'failed');
+  assert.deepEqual(replay.events.filter(event => event.type === 'character_media').map(event => event.attachment), [attachment]);
+  assert.deepEqual(replay.outerRequests, []);
+  assert.deepEqual(replay.triggerRequests, []);
+  assert.equal(replay.snapshot.tables.usage_records.length, failed.snapshot.tables.usage_records.length);
+  assert.equal(generations, 1);
 });
 
 test('a delivered video stays attached when the chat model incorrectly denies sending it', async () => {
@@ -777,6 +817,96 @@ test('a numerical request with a public lookup uses search before the planned ca
   assert.equal(turn.receipts[1].approximate, true);
   assert.ok(Math.abs(Number(turn.receipts[1].result) - (1000 / Math.log(1000))) < 1e-10);
   assert.equal(offers(turn).length, 0);
+});
+
+test('both attempts to plan search share a deadline and the remaining tools can finish after it expires', async () => {
+  const planningSignals = [];
+  let searchRuns = 0;
+  const app = await demo({ toolDecision: {}, searchPlanningTimeoutMs: 80,
+    search: { configured: true, async search() { searchRuns++; return { results: [] }; } } });
+  const reply = '没查到票价。2 乘 3 等于 6。';
+  const turn = await app.send('查植物园票价，再算2乘3，看看鳄鱼爸爸擅长什么。', {
+    agentId: shangang.id, trigger: 'call', decision: decision('directory', { mentorIds: [currentMentor.id] }),
+    searchChoice: 'call', calculateChoice: 'call', toolDecision: { status: 'succeeded', anyToolProbability: 0.91, probabilities: [] },
+    async nativeTool(choice, messages, tools, signal) {
+      const name = choice?.function.name;
+      if (name === 'search_web') {
+        planningSignals.push(signal);
+        if (planningSignals.length === 2) await delay(1500, null, { signal });
+      } else if (name === 'calculate') {
+        return { id: 'remaining-calc', type: 'function', function: { name, arguments: '{"expression":"2*3"}' } };
+      }
+    }, reply,
+  });
+  assert.equal(planningSignals.length, 2);
+  assert.equal(planningSignals[0], planningSignals[1]);
+  assert.equal(planningSignals[0].aborted, true);
+  assert.equal(searchRuns, 0);
+  const requests = turn.context.modelRequests.filter(request => request.purpose === 'planned-search_web');
+  assert.deepEqual(requests.map(request => request.usage.status), ['succeeded', 'failed']);
+  assert.equal(requests[1].error.code, 'SEARCH_PLANNING_TIMEOUT');
+  assert.deepEqual(turn.context.toolCalls.map(call => call.name).sort(), ['calculate', 'find_mentor']);
+  assert.ok(turn.receipts.some(receipt => Number(receipt.result) === 6));
+  assert.ok(turn.receipts.some(receipt => receipt.status === 'directory'));
+  assert.ok(turn.outerRequests.at(-1).background.content.includes('未得到以下工具的结果：search_web'));
+  const labels = turn.events.filter(event => event.type === 'tool_status').map(event => event.label);
+  assert.ok(labels.includes('正在准备搜索词…'));
+  assert.ok(labels.includes('准备搜索词超时。'));
+  assert.ok(!labels.includes('正在查找…'));
+  assert.deepEqual(parts(turn), [reply]);
+});
+
+test('the search planning deadline does not shorten the actual web search', async () => {
+  let plannerSignal, serviceSignal;
+  const app = await demo({ toolDecision: {}, searchPlanningTimeoutMs: 40,
+    search: { configured: true, async search({ signal }) {
+      serviceSignal = signal;
+      await delay(100, null, { signal });
+      return { results: [{ title: '开放时间', url: 'https://example.com', snippet: '周二开放。' }] };
+    } } });
+  const turn = await app.send('查一下植物园的开放时间。', {
+    trigger: 'skip', searchChoice: 'call', toolDecision: { status: 'succeeded', anyToolProbability: 0.91, probabilities: [] },
+    nativeTool(choice, messages, tools, signal) {
+      if (choice?.function.name !== 'search_web') return;
+      plannerSignal = signal;
+      return { id: 'web', type: 'function', function: { name: 'search_web', arguments: '{"query":"植物园 开放时间"}' } };
+    }, reply: '周二开放。',
+  });
+  assert.ok(plannerSignal.aborted);
+  assert.equal(serviceSignal.aborted, false);
+  assert.equal(turn.receipts[0].ok, true);
+  assert.equal(turn.context.toolCalls[0].usage.status, 'succeeded');
+  const labels = turn.events.filter(event => event.type === 'tool_status').map(event => event.label);
+  assert.ok(labels.indexOf('正在准备搜索词…') < labels.indexOf('正在查找…'));
+  assert.ok(labels.includes('已取得搜索结果。'));
+  assert.ok(!labels.includes('准备搜索词超时。'));
+});
+
+test('local and billed tool statuses reflect business failures while an empty recall succeeds', async () => {
+  const app = await demo({ toolDecision: {} });
+  const turn = await app.send('求1除以0，查一下上次点的饮料，再看看导师名册。', {
+    trigger: 'call', decision: 'invalid mentor JSON', calculateChoice: 'call', recallChoice: 'call',
+    toolDecision: { status: 'succeeded', anyToolProbability: 0.95, probabilities: [] },
+    nativeTool(choice) {
+      const name = choice?.function.name;
+      if (name === 'calculate' || name === 'recall_memory') return { id: name, type: 'function', function: {
+        name, arguments: JSON.stringify(name === 'calculate' ? { expression: '1/0' } : { query: '上次点的饮料' }) } };
+    }, reply: '不能除以零。上次点的饮料我没有查到。',
+  });
+  const calls = Object.fromEntries(turn.context.toolCalls.map(call => [call.name, call]));
+  assert.equal(calls.calculate.result.ok, false);
+  assert.equal(calls.calculate.usage.totalCostCny, 0);
+  assert.equal(calls.recall_memory.result.status, 'no_match');
+  assert.equal(calls.find_mentor.result.status, 'unavailable');
+  assert.equal(calls.find_mentor.usage.kind, 'mentor_decision');
+  assert.equal(calls.find_mentor.usage.finishReason, 'stop');
+  for (const [name, status] of [['calculate','failed'], ['recall_memory','succeeded'], ['find_mentor','failed']]) {
+    assert.equal(calls[name].usage.status, status);
+    const row = turn.snapshot.tables.usage_records.find(record => record.run_id === turn.run.id && record.tool_name === name);
+    assert.equal(JSON.parse(row.entry).status, status);
+    const completed = turn.events.filter(event => event.type === 'tool_usage' && event.call.name === name && !event.call.pending);
+    assert.deepEqual(completed.map(event => event.call.status), [status]);
+  }
 });
 
 test('a planned calculation is retried once when the first model response omits the call', async () => {

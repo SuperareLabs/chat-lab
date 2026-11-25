@@ -94,7 +94,7 @@ test('direct Qwen and Pika credentials work without Service Clan and stay on the
   const receipts = [];
   const video = await videos.generate('video', { agent: role, videoPlan: videoPlan('VID_AMBIENT_LOOP'),
     runId: 'direct-video', signal, onUsage: entry => receipts.push(entry) });
-  assert.deepEqual(video, { ok: false, error: 'Media service HTTP 503' });
+  assert.deepEqual(video, { ok: false, error: 'Pika 视频下载失败（HTTP 503）' });
   assert.equal(calls.at(-1), '/clip.mp4');
   const { receiptProof, state } = receipts.at(-1).mediaBilling;
   assert.equal(state, 'pending');
@@ -117,6 +117,45 @@ test('an unavailable Pika relay fails before making any network request', async 
   assert.deepEqual(result, { ok: false, error: '成都 → 新加坡视频隧道不可用' });
   assert.equal(fetch.mock.callCount(), 0);
   assert.equal(pikaFetch.mock.callCount(), 0);
+});
+
+test('Pika failures identify the stage using confirmed signals and never resubmit the job', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'chatlab-video-failure-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const pikaKeyFile = join(directory, 'pika-key');
+  await writeFile(pikaKeyFile, 'test-key\n', { mode: 0o600 });
+  const media = createCharacterMedia({ directory, pikaKeyFile, ffmpeg: join(directory, 'missing-ffmpeg') });
+  const job = () => Response.json({ id: 'clip' });
+  const completed = () => Response.json({ status: 'completed', output: { video: { url: 'https://cdn.pika.art/clip.mp4' } } });
+  const networkError = () => new TypeError('private URL with signed parameters', { cause: { code: 'ECONNRESET' } });
+  const reset = () => { throw networkError(); };
+  const scenarios = [
+    ['提交断线', [reset], 'Pika 视频任务提交遇到网络错误（ECONNRESET）'],
+    ['查询断线', [job, reset], 'Pika 视频状态查询遇到网络错误（ECONNRESET）'],
+    ['查询 HTTP 出错', [job, () => new Response(null, { status: 429 })], 'Pika 视频状态查询失败（HTTP 429）'],
+    ['查询超时', [job, () => { throw new DOMException('private detail', 'TimeoutError'); }], 'Pika 视频状态查询超时'],
+    ['任务失败', [job, () => Response.json({ status: 'failed', error: 'private detail' })], 'Pika 视频任务已失败'],
+    ['任务取消', [job, () => Response.json({ status: 'cancelled' })], 'Pika 视频任务已取消'],
+    ['下载流中断', [job, completed, () => new Response(new ReadableStream({
+      start(controller) { controller.error(networkError()); },
+    }))], 'Pika 视频下载遇到网络错误（ECONNRESET）'],
+    ['未知错误', [() => { throw new TypeError('private detail'); }], 'Pika 视频任务提交失败（原因未确认）'],
+    ['本地处理失败', [job, completed, () => new Response(Buffer.from('0000ftyp'))], '本地视频处理失败'],
+  ];
+  for (const [title, responses, expected] of scenarios) await t.test(title, async t => {
+    const requests = [];
+    t.mock.method(globalThis, 'fetch', async (url, options) => {
+      requests.push(options.method ?? 'GET');
+      return responses[requests.length - 1]();
+    });
+    const receipts = [];
+    const result = await media.generate('video', { agent: role, videoPlan: videoPlan('VID_AMBIENT_LOOP'),
+      runId: title, signal: new AbortController().signal, onUsage: entry => receipts.push(entry) });
+    assert.deepEqual(result, { ok: false, error: expected });
+    assert.equal(requests.length, responses.length);
+    assert.equal(requests.filter(verb => verb === 'POST').length, 1);
+    assert.equal(receipts.at(-1).mediaBilling.jobId, responses.length > 1 ? 'clip' : null);
+  });
 });
 
 test('Share Video uses the template duration or rounds up with the spoken-line buffer', () => {
@@ -318,7 +357,8 @@ test(`Pika generates ${framing} framing with ${fixedVoice ? 'measured ICL audio'
   const image = await readFile(portrait);
   const calls = [];
   const receipts = [];
-  const clipDuration = fixedVoice ? 5 : 3;
+  const requestedDuration = fixedVoice && framing === 'selfie' ? 6 : undefined;
+  const clipDuration = requestedDuration ?? (fixedVoice ? 5 : 3);
   const speaker = 'S_CustomVoice';
   const selfie = framing === 'selfie';
   let submittedPrompt;
@@ -383,11 +423,13 @@ test(`Pika generates ${framing} framing with ${fixedVoice ? 'measured ICL audio'
   const media = createCharacterMedia({ tokenFile, directory, pikaRelay });
   const agent = { name: '测试角色', metadata: { card: { portrait: '/assets/lin-wanqing-avatar.png' },
     ...(fixedVoice ? { videoVoiceId: speaker } : {}) } };
-  const result = await media.generate('video', { agent, videoPlan: videoPlan(selfie ? 'VID_SELFIE_TALK' : 'VID_POV_INTERACT', dialogue), runId: 'upload-test',
+  const plan = readShareVideoPlan({ ...videoArgs(selfie ? 'VID_SELFIE_TALK' : 'VID_POV_INTERACT', dialogue),
+    duration_seconds: requestedDuration }, new Set());
+  const result = await media.generate('video', { agent, videoPlan: plan, runId: 'upload-test',
     signal: new AbortController().signal, onUsage: entry => receipts.push(entry), onPrompt: prompt => { submittedPrompt = prompt; } });
   assert.equal(calls.at(-1), '/result.mp4');
   assert(!calls.some(path => path.includes('gpu-qwen')));
-  assert.deepEqual(result, { ok: false, error: 'Media service HTTP 503' });
+  assert.deepEqual(result, { ok: false, error: 'Pika 视频下载失败（HTTP 503）' });
   assert.equal(receipts[0].mediaBilling.estimatedMicroUsd, clipDuration * (selfie ? 30_000 : 10_000));
   assert.equal(receipts.at(-1).mediaBilling.jobId, 'media-video');
   assert.equal(receipts.at(-1).mediaBilling.actualMicroUsd, 127001);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decodeChatOutput, chatHistoryForModel, ReplyFormatError } from '../lib/chat-output.mjs';
+import { alignMediaReply, decodeChatOutput, chatHistoryForModel, ReplyFormatError } from '../lib/chat-output.mjs';
 import { createBrowserWorkspace } from '../lib/browser-workspace.mjs';
 
 const packed = messages => JSON.stringify({ messages });
@@ -30,6 +30,33 @@ test('model history preserves explicit boundaries without modifying stored evide
   assert.equal(wire[0].text, history[0].text);
   assert.deepEqual(JSON.parse(wire[1].text), { messages: history[1].parts });
   assert.deepEqual(JSON.parse(wire[2].text), { messages: [history[2].text] });
+});
+
+test('media failure wording is removed without replacing the search, mentor or observation reply', () => {
+  const search = '科技馆周二到周日9:30—17:00开，周一闭馆，法定节假日除外。';
+  const mentor = '小鹿小林能陪你辨花、记变化，观察花瓣就找他。';
+  assert.deepEqual(alignMediaReply([search, mentor, '花坛那朵黄花这轮没有照片，先说说它长什么样？'],
+    { photo: 'failed', video: 'not_selected' }), [search, mentor, '先说说它长什么样？']);
+  assert.deepEqual(alignMediaReply([search, mentor, '按你说的，我想生成的花坛黄花照片这轮没成，所以没图给你。'],
+    { photo: 'failed', video: 'not_selected' }), [search, mentor]);
+  assert.deepEqual(alignMediaReply(['按你说的，花坛黄花照片这轮没成，所以没图给你，先从花瓣的形状看起吧。'],
+    { photo: 'failed', video: 'not_selected' }), ['按你说的，先从花瓣的形状看起吧。']);
+
+  const unavailableSearch = '开馆时间我不敢乱报，你去官网再核对一下。';
+  const advisor = '小林找到了，蚂蚁路线和搬了什么，他陪你记。';
+  const failedVideo = '奶冻视频这轮没做成，环境声也没法保证，先不给你看成品。';
+  assert.deepEqual(alignMediaReply([unavailableSearch, advisor, failedVideo],
+    { photo: 'not_selected', video: 'failed' }), [unavailableSearch, advisor]);
+  assert.deepEqual(alignMediaReply([failedVideo], { photo: 'not_selected', video: 'failed' }), ['你最想看哪个细节？']);
+});
+
+test('media alignment keeps photography advice, discussion of plans and illustration provenance', () => {
+  const advice = ['如果这次没有照片，可以先画草图。', '这次没有照片可参考，也可以看文字说明。',
+    '如果视频没做成循环，剪辑处会有明显跳动。',
+    '环境声也没法保证，可以单独录一小段。'];
+  assert.deepEqual(alignMediaReply(advice, { photo: 'not_selected', video: 'failed' }), advice);
+  const illustration = ['这是双子塔的示意图，不是现场实拍。', '真要确认实景，可以看看官网的原图。'];
+  assert.deepEqual(alignMediaReply(illustration, { photo: 'ready', video: 'not_selected' }), illustration);
 });
 
 async function fixture(provider) {
